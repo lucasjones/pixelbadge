@@ -19,9 +19,10 @@ from .lj_utils.lj_button_labels import ButtonLabels
 from .lj_utils.lj_notification import Notification
 from .lj_utils.wifi_utils import check_wifi, wifi_is_connecting
 
+APP_BASE_PATH = "./apps/pixelbadge/"
 
 def get_image_path(filename):
-    return "./apps/lj_utilities/" + filename
+    return APP_BASE_PATH + filename
 
 
 DISPLAY_THUMBNAILS_STATE = 1

@@ -200,3 +200,49 @@ class CreditsScreen(Utility):
             color = hsv_to_rgb(((self.screen_hue + i * 30) % 360 / 360) * math.tau, 1, 1)
             tildagonos.leds[i+1] = color
         tildagonos.leds.write()
+
+class UserUploadedDisclaimerScreen(Utility):
+    # Shows a disclaimer that pixel art content is user uploaded
+    def __init__(self, app, APP_BASE_PATH):
+        super().__init__(app)
+        self.screen_hue = 0
+        self.button_labels = ButtonLabels(self.app,
+            labels={
+                "CANCEL": "Back",
+                "CONFIRM": "Continue",
+            },
+            text_color=(1,1,1),
+            bg_pressed_color=(1,1,1),
+            text_pressed_color=(0,0,0),
+            fade_out_time=0,
+        )
+        self.app_base_path = APP_BASE_PATH
+
+    def draw(self, ctx):
+        clear_background(ctx, (0, 0, 0))
+        self.button_labels.draw(ctx)
+        ctx.rgb(1, 1, 1)
+        ctx.font_size = 20
+        ctx.text_align = ctx.CENTER
+        ctx.text_baseline = ctx.MIDDLE
+        ctx.move_to(0, -15).text("Please be aware that")
+        ctx.move_to(0, 10).text("pixel art is user uploaded")
+    
+    def update(self, delta):
+        # self.screen_hue = (self.screen_hue + 1) % 360
+        self.button_labels.update(delta)
+    
+    def update_leds(self):
+        for i in range(12):
+            tildagonos.leds[i+1] = (0, 0, 0)
+        tildagonos.leds.write()
+    
+    def handle_buttondown(self, event: ButtonDownEvent):
+        if BUTTON_TYPES["CONFIRM"] in event.button:
+            # write _seen_disclaimer.txt in current folder
+            print("User accepted content disclaimer")
+            with open(self.app_base_path + "_seen_disclaimer.txt", "w") as f:
+                f.write("y")
+            self.app.set_screen("Pixel Art")
+            return True
+        return False

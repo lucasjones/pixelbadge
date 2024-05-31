@@ -35,8 +35,8 @@ from .lj_utils.base_types import Utility, ImprovedAppBase
 from .lj_utils.lj_notification import Notification
 from .lj_utils.wifi_utils import check_wifi, WiFiManager
 
-from .animation_viewer import AnimationApp, api_base_url
-from .basic_utils import Torch, Rainbow, Strobe, Spiral, CreditsScreen
+from .animation_viewer import AnimationApp, api_base_url, APP_BASE_PATH
+from .basic_utils import Torch, Rainbow, Strobe, Spiral, CreditsScreen, UserUploadedDisclaimerScreen
 from .game_of_life import ConwaysGameOfLife
 from .visual_effects import RandomGrid
 from .snap_game import SnapGame
@@ -135,6 +135,7 @@ class UtilityMenuApp(ImprovedAppBase):
         }
         self.utilities["main"] = MainMenu(self, items=list(self.utilities.keys()))
         self.utilities["credits"] = CreditsScreen(self)
+        self.utilities["pixel_art_disclaimer"] = UserUploadedDisclaimerScreen(self, APP_BASE_PATH)
         self.button_labels = ButtonLabels(
             self, labels={
                 "LEFT": "Left",
@@ -163,6 +164,9 @@ class UtilityMenuApp(ImprovedAppBase):
     
     def set_screen(self, screen):
         self.utilities[self.current_menu].on_exit()
+        if screen == "Pixel Art":
+            if not self.user_has_seen_disclaimer():
+                screen = "pixel_art_disclaimer"
         self.current_menu = screen
         if screen != "main":
             self.button_labels.hide()
@@ -245,3 +249,8 @@ class UtilityMenuApp(ImprovedAppBase):
         notification = Notification("Wi-Fi Disconnected", open=True, animate_duration=200, display_time=1000)
         self.notifications.append(notification)
 
+    def user_has_seen_disclaimer(self):
+        # check if file _seen_disclaimer.text exists
+        seen = "_seen_disclaimer.txt" in uos.listdir(APP_BASE_PATH)
+        print("User-generated content disclaimer accepted: ", seen)
+        return seen
