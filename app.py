@@ -22,7 +22,9 @@ from app_components import display_x, display_y
 from app_components.tokens import one_pt
 from tildagonos import tildagonos
 import display
+from sys_colors import hsv_to_rgb, rgb_to_hsv
 from events.input import ButtonDownEvent, BUTTON_TYPES, ButtonUpEvent
+from system.patterndisplay.events import PatternDisable, PatternEnable
 from system.scheduler.events import RequestStopAppEvent
 from system.eventbus import eventbus
 
@@ -50,6 +52,10 @@ class MainMenu(Utility):
             text_color=(1, 1, 1)
         )
         self.bg = RandomGrid(app)
+        self.led_colors = None
+        self.leds_last_updated = None
+        self.timer = 0
+        self.led_update_interval = 3000
     
     def on_start(self):
         self.bg.grid = self.bg.generate_grid()
@@ -73,11 +79,24 @@ class MainMenu(Utility):
 
     def update(self, delta):
         self.menu.update(delta)
+        self.timer += delta
+        if self.timer > self.led_update_interval or self.led_colors is None:
+            # set led colors to random hues
+            self.led_colors = [hsv_to_rgb((random.randint(0, 360) / 360) * math.tau, 1, 0.3) for _ in range(12)]
+            self.timer = 0.0
 
     def update_leds(self):
         # Turn off all LEDs
-        for i in range(12):
-            tildagonos.leds[i+1] = (0, 0, 0)
+        # for i in range(12):
+        #     color = hsv_to_rgb(((self.screen_hue + i * 30) % 360 / 360) * math.tau, 1, 1)
+        #     tildagonos.leds[i+1] = color
+        # tildagonos.leds.write()
+        if self.led_colors is not None and len(self.led_colors) == 12:
+            for i in range(12):
+                tildagonos.leds[i+1] = self.led_colors[i]
+        else:
+            for i in range(12):
+                tildagonos.leds[i+1] = (0, 0, 0)
         tildagonos.leds.write()
     
     def handle_buttondown(self, event: ButtonDownEvent):
@@ -106,7 +125,7 @@ class UtilityMenuApp(ImprovedAppBase):
         super().__init__()
         self.current_menu = "main"
         self.utilities = {
-            "Pixel Badge": AnimationApp(self),
+            "Pixel Art": AnimationApp(self),
             "torch": Torch(self),
             "rainbow": Rainbow(self),
             "strobe": Strobe(self),
@@ -194,11 +213,13 @@ class UtilityMenuApp(ImprovedAppBase):
     
     def on_app_focused(self):
         super().on_app_focused()
+        eventbus.emit(PatternDisable())
         self.button_labels.reset()
         self.utilities[self.current_menu].on_start()
     
     def on_app_unfocused(self):
         super().on_app_unfocused()
+        eventbus.emit(PatternEnable())
         self.utilities[self.current_menu].on_exit()
 
     def on_first_wifi_connect(self, is_first_connection):

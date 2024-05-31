@@ -67,6 +67,11 @@ class ConwaysGameOfLife(Utility):
             for idx in range(len(self.grid)):
                 self.grid[idx] = new_grid[idx]
             self.timer = 0
+    
+    def update_leds(self):
+        for i in range(12):
+            tildagonos.leds[i + 1] = (0, 0, 0)
+        tildagonos.leds.write()
 
     def draw(self, ctx):
         if not self.started:

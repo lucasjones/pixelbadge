@@ -150,6 +150,9 @@ class ThumbnailBrowser(Utility):
             self.parent.app.print_error(f"Error downloading thumbnail for {sequence['id']}: {e}")
         if i < len(self.sequences) - 1:
             _thread.start_new_thread(self.download_thumbnails, (i + 1, page_identifier))
+        elif i == len(self.sequences) - 1:
+            print("[download_thumbnails] running gc.collect()")
+            gc.collect()
 
     def get_thumbnail_screen_coords(self, i):
         x = (i % 3) * self.icon_size - 90
@@ -370,12 +373,7 @@ class AnimationPlayer(Utility):
         ctx.image_smoothing = 0
         frame_drawn = False
         if self.current_sequence and 'local_frames' in self.current_sequence:
-            current_frame = self.current_frame % len(self.current_sequence['local_frames'])
-            frame_path = None
-            while frame_path is None and current_frame >= 0:
-                frame_path = self.current_sequence['local_frames'][current_frame]
-                if frame_path is None:
-                    current_frame -= 1
+            current_frame, frame_path = self.get_current_frame_or_last_downloaded()
             if frame_path is not None:
                 ctx.move_to(0, 0)
                 ctx.image(frame_path, -display_x * 0.5, -display_y * 0.5, display_x, display_y)
@@ -402,15 +400,28 @@ class AnimationPlayer(Utility):
                     self.update_f_leds()
                 except Exception as e:
                     print(f"Error updating frame leds: {e}")
+    
+    def get_current_frame_or_last_downloaded(self):
+        if self.current_sequence and 'local_frames' in self.current_sequence:
+            current_frame = self.current_frame % len(self.current_sequence['local_frames'])
+            frame_path = None
+            while frame_path is None and current_frame >= 0:
+                frame_path = self.current_sequence['local_frames'][current_frame]
+                if frame_path is None:
+                    current_frame -= 1
+            return current_frame, frame_path
+        return None
 
     def update_f_leds(self):
-        if self.current_sequence:
-            if 'frame_main_colors' in self.current_sequence and self.current_sequence['frame_main_colors'] is not None:
-                colors = self.current_sequence['frame_main_colors'][self.current_frame]
-                for i in range(12):
-                    color = colors[i % len(colors)]
-                    tildagonos.leds[i+1] = color
-                tildagonos.leds.write()
+        if self.current_sequence and 'local_frames' in self.current_sequence:
+            current_frame, frame_path = self.get_current_frame_or_last_downloaded()
+            if frame_path is not None and 'frame_main_colors' in self.current_sequence and self.current_sequence['frame_main_colors'] is not None:
+                colors = self.current_sequence['frame_main_colors'][current_frame]
+                if colors is not None and len(colors) > 0:
+                    for i in range(12):
+                        color = colors[i % len(colors)]
+                        tildagonos.leds[i+1] = color
+                    tildagonos.leds.write()
 
     def handle_buttondown(self, event: ButtonDownEvent):
         if BUTTON_TYPES['CANCEL'] in event.button:
@@ -452,6 +463,8 @@ class AnimationPlayer(Utility):
             else:
                 print(f"Failed to download frame {i} for {self.current_sequence['id']}")
         self.downloading = False
+        print("[download_animation] running gc.collect()")
+        gc.collect()
 
     def cleanup(self):
         if self.current_sequence:
@@ -459,6 +472,7 @@ class AnimationPlayer(Utility):
                 if frame_path is not None:
                     uos.remove(frame_path)
             self.current_sequence = None
+            print("[AnimationPlayer.cleanup] running gc.collect()")
             gc.collect()
 
     def on_start(self):
@@ -607,7 +621,7 @@ class LoginUtility(Utility):
 
     def poll_for_auth(self):
         while not self.parent.auth_token:
-            time.sleep_ms(10000)
+            time.sleep_ms(5000)
             if self.parent.state != LOGIN_STATE:
                 return
             try:
