@@ -1,0 +1,6 @@
+tmp/
+thumbs/
+favorite_animations.json
+*state_v1.json
+.DS_Store
+**/.DS_Store
