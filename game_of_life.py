@@ -7,6 +7,7 @@ from tildagonos import tildagonos
 
 from .lj_utils.lj_display_utils import colors, clear_background
 from .lj_utils.base_types import Utility
+from .lj_utils.lj_button_labels import ButtonLabels
 
 class ConwaysGameOfLife(Utility):
     def __init__(self, app):
@@ -22,10 +23,24 @@ class ConwaysGameOfLife(Utility):
         self.started = False
         self.grid = None
         self.new_grid = None
+        self.button_labels = ButtonLabels(app,
+            labels={
+                "CANCEL": "Exit",
+                "UP": "size+",
+                "DOWN": "size-",
+                "RIGHT": "Reset"
+            },
+            text_color=(1,1,1),
+            bg_color=(0,0,0),
+            bg_pressed_color=(1,1,1),
+            text_pressed_color=(0,0,0),
+            fade_out_time=4000,
+        )
     
     def on_start(self):
         self.randomize_grid()
         self.started = True
+        self.button_labels.reset()
     
     def on_exit(self):
         self.started = False
@@ -42,6 +57,7 @@ class ConwaysGameOfLife(Utility):
         return self.grid
 
     def update(self, delta):
+        self.button_labels.update(delta)
         if not self.started:
             return
         self.timer += delta
@@ -63,6 +79,7 @@ class ConwaysGameOfLife(Utility):
             else:
                 ctx.rgb(0, 0, 0)
             ctx.rectangle(x * self.cell_size - self.grid_pixel_width // 2, y * self.cell_size - self.grid_pixel_height // 2, self.cell_size, self.cell_size).fill()
+        self.button_labels.draw(ctx)
     
     def get_grid(self, x, y):
         return self.grid[y*self.grid_size_x + x]

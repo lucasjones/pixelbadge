@@ -15,6 +15,7 @@ class ButtonLabels:
         register_button_handlers=True,
         highlight_button_presses=True,
         text_color=(0, 0, 0),
+        bg_color=None,
         text_pressed_color=(1, 1, 1),
         bg_pressed_color=(0, 0, 0),
         fade_out_time=6000,
@@ -31,6 +32,7 @@ class ButtonLabels:
 
         self.text_color = text_color
         self.text_pressed_color = text_pressed_color
+        self.bg_color = bg_color
         self.bg_pressed_color = bg_pressed_color
 
         self.fade_out_time = fade_out_time
@@ -97,11 +99,18 @@ class ButtonLabels:
                     alpha = 1.0 - (self.time_fading_out - self.hold_time) / (self.fade_out_time - self.hold_time)
                 # print(f"alpha: {alpha}")
 
-            if pressed and self.highlight_button_presses:
+            # Draw text background
+            if pressed and self.highlight_button_presses or self.bg_color is not None:
+                if pressed and self.highlight_button_presses:
+                    ctx.rgba(*self.bg_pressed_color, alpha)
+                elif self.bg_color is not None:
+                    ctx.rgba(*self.bg_color, alpha)
+                
                 text_width = ctx.text_width(label) + 5
-                ctx.rgba(*self.bg_pressed_color, alpha)
                 # ctx.rectangle(-text_width/2, -10, text_width, 20).fill()
                 ctx.round_rectangle(-text_width/2, -12, text_width, 24, 5).fill()
+            
+            if pressed:
                 ctx.rgba(*self.text_pressed_color, alpha)
             else:
                 # ctx.rgb(0, 0, 0).rectangle(-20, -10, 40, 20).fill()

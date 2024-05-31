@@ -125,7 +125,8 @@ class UtilityMenuApp(ImprovedAppBase):
                 "CANCEL": "Cancel",
                 "CONFIRM": "Confirm"
             },
-            bg_pressed_color=(1, 0, 0)
+            bg_pressed_color=(1, 0, 0),
+            text_color=(1, 1, 1),
         )
         self.notifications = []
 
