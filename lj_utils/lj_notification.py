@@ -6,7 +6,7 @@ from app_components.tokens import label_font_size, set_color, colors
 class Notification:
     _half_hex_rotation = (2 * 3.141593) / 12
 
-    def __init__(self, message, port=0, open=True, font_size=None, animate_duration=500, bg_color=(82, 131, 41), display_time=3000):
+    def __init__(self, message, port=0, open=True, font_size=None, animate_duration=500, bg_color=(82/255.0, 131/255.0, 41/255.0), display_time=3000):
         self.message = message
         self._open = open
         self._port = port
@@ -105,6 +105,8 @@ class Notification:
                 ctx.rgb(*self.bg_color)
             elif len(self.bg_color) == 4:
                 ctx.rgba(*self.bg_color)
+            else:
+                print("Invalid bg color: ", self.bg_color)
             ctx.rectangle(-120, -150 - 30 * (len(final_lines) - 1) - (self._animation_state * -30 * len(final_lines)), 240, 30 * len(final_lines)).fill()
 
             if self._port != 0:

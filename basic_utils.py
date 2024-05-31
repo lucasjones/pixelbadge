@@ -46,7 +46,7 @@ class Rainbow(Utility):
         super().__init__(app)
         self.screen_hue = 0
         self.intervals = [100, 200, 300, 400, 500, 1000, 2000, 3000, 4000, 5000, 10000, 20000, 30000]
-        self.interval_index = 8
+        self.interval_index = 10
 
     def draw(self, ctx):
         r, g, b = hsv_to_rgb((self.screen_hue / 360) * math.tau, 1, 1)

@@ -16,7 +16,7 @@ class ConwaysGameOfLife(Utility):
         self.app = app
         self.grid_pixel_width = display_x
         self.grid_pixel_height = display_y
-        self.cell_size = 5
+        self.cell_size = 10
         self.grid_size_x = self.grid_pixel_width // self.cell_size
         self.grid_size_y = self.grid_pixel_height // self.cell_size
         self.timer = 0
@@ -133,7 +133,7 @@ class ConwaysGameOfLife(Utility):
         #     self.interval = min(10000, self.interval + 50)
         #     print(f"Increased interval to: {self.interval}")
         # change grid size with UP and DOWN buttons instead (minimum 2, maximum 50)
-        cell_sizes = [4, 5, 6, 8, 10, 12, 15, 20, 24, 30, 40]
+        cell_sizes = [6, 8, 10, 12, 15, 20, 24, 30, 40]
         if BUTTON_TYPES["UP"] in event.button:
             current_index = cell_sizes.index(self.cell_size)
             self.cell_size = cell_sizes[(current_index + 1) % len(cell_sizes)]

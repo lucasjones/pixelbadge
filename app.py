@@ -69,7 +69,6 @@ class MainMenu(Utility):
         #     self.app.notifications.append(notification)
         # else:
         #     print("Wi-Fi connected")
-        _thread.start_new_thread(self.check_for_update, ())
     
     # def on_wifi_connecting(self):
     #     print("Connecting to Wi-Fi...")
@@ -105,26 +104,6 @@ class MainMenu(Utility):
     def handle_buttondown(self, event: ButtonDownEvent):
         self.menu._handle_buttondown(event)
         return False
-    
-    def check_for_update(self):
-        print("Checking for updates...")
-        while not self.app.wifi_manager.is_connected():
-            print("[check_for_update] Waiting for Wi-Fi connection...")
-            time.sleep_ms(100)
-        print("[check_for_update] Wi-Fi connected")
-        try:
-            response = requests.get(api_base_url + "/api/latest_app_version")
-            if response.status_code == 200:
-                data = response.json()
-                latest_version = data.get("iota")
-                print("Update check result:", data.get("version"), "iota:", latest_version, "local version:", APP_VERSION, "iota:", APP_VERSION_IOTA)
-                if latest_version > APP_VERSION_IOTA:
-                    notification = Notification(f"New update available!\nYou are on {APP_VERSION},\nlatest is {data.get('version')}", font_size=one_pt * 9, open=True)
-                    self.app.notifications.append(notification)
-            else:
-                self.app.print_error("Failed to check for updates. Response status ", response.status_code)
-        except Exception as e:
-            print(f"Failed to check for updates: {e}")
 
 class UtilityMenuApp(ImprovedAppBase):
     def __init__(self):
@@ -226,6 +205,7 @@ class UtilityMenuApp(ImprovedAppBase):
         eventbus.emit(PatternDisable())
         self.button_labels.reset()
         self.utilities[self.current_menu].on_start()
+        asyncio.create_task(self.run_check_for_update())
     
     def on_app_unfocused(self):
         super().on_app_unfocused()
@@ -261,5 +241,28 @@ class UtilityMenuApp(ImprovedAppBase):
         seen = file_exists(APP_BASE_PATH + "_seen_disclaimer.txt")
         print("User-generated content disclaimer accepted: ", seen)
         return seen
+    
+    async def run_check_for_update(self):
+        while not self.wifi_manager.is_connected():
+            print("[check_for_update] Waiting for Wi-Fi connection...")
+            await asyncio.sleep(1)
+        print("[check_for_update] Wi-Fi connected")
+        _thread.start_new_thread(self.check_for_update, ())
+    
+    def check_for_update(self):
+        print("Checking for updates...")
+        try:
+            response = requests.get(api_base_url + "/api/latest_app_version")
+            if response.status_code == 200:
+                data = response.json()
+                latest_version = data.get("iota")
+                print("Update check result:", data.get("version"), "iota:", latest_version, "local version:", APP_VERSION, "iota:", APP_VERSION_IOTA)
+                if latest_version > APP_VERSION_IOTA:
+                    notification = Notification(f"New update available!\nYou are on {APP_VERSION},\nlatest is {data.get('version')}", font_size=one_pt * 9, open=True)
+                    self.notifications.append(notification)
+            else:
+                self.print_error("Failed to check for updates. Response status ", response.status_code)
+        except Exception as e:
+            print(f"Failed to check for updates: {e}")
 
 __app_export__ = UtilityMenuApp

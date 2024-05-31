@@ -10,6 +10,8 @@ colors = {
     "pink": (245, 80, 137),
     "blue": (46, 173, 217),
 }
+for color in colors:
+    colors[color] = tuple([c / 255 for c in colors[color]])
 
 def clear_background(ctx, color=None):
     if color is None:

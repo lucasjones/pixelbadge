@@ -107,3 +107,4 @@ class WiFiManager:
     
     def is_connected(self):
         return self.wifi_connected
+        # return True

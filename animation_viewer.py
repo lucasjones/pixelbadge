@@ -2,6 +2,7 @@
 import json
 import os
 import math
+import async_helpers
 import requests
 import _thread
 import gc
@@ -20,7 +21,11 @@ from .lj_utils.lj_notification import Notification
 from .lj_utils.wifi_utils import check_wifi, wifi_is_connecting
 from .lj_utils.file_utils import file_exists, folder_exists
 
-APP_BASE_PATH = "./apps/pixelbadge/"
+APP_BASE_PATH = "/apps/pixelbadge/"
+# for f in os.listdir("/apps"):
+#     if app.startswith("lucasjones-pixelbadge"):
+#         APP_BASE_PATH = f"/apps/{app}/"
+#         break
 
 def get_image_path(filename):
     return APP_BASE_PATH + filename
@@ -33,10 +38,48 @@ LOGIN_STATE = 4
 DISPLAY_WEBSITE_STATE = 5
 
 # api_base_url = "http://localhost:8080"
-api_base_url = "https://pixelbadge.xyz"
+api_base_url = "https://badge.pixelbadge.xyz"
 favorites_file = get_image_path("favorite_animations.json")
 auth_file = get_image_path("auth_token.json")
 
+
+async def download_thumbnails(thumbnail_browser, i, sequence, sequences_len, page_identifier):
+    print("Downloading thumbnails...")
+    erased_thumbnails = False
+    thumb_path = None
+    if i >= sequences_len:
+        thumbnail_browser.parent.app.print_error(f"WARNING: download_thumbnails called with invalid index: {i} (sequences len: {sequences_len})")
+        return
+    try:
+        thumb_url = f"{api_base_url}/api/sequence/{sequence['id']}/thumbnail"
+        thumb_response = requests.get(thumb_url)
+        # thumbnail_browser.download_task = async_helpers.unblock(requests.get, thumbnail_browser.periodic_func, thumb_url)
+        # thumb_response = await thumbnail_browser.download_task
+        if thumbnail_browser.page_identifier != page_identifier:
+            return
+        if thumb_response.status_code == 200:
+            print(f"Downloaded thumbnail for {sequence['id']}")
+            img_file = f"thumbs/{sequence['id']}.png"
+            thumb_path = get_image_path(img_file)
+            if not erased_thumbnails:
+                erased_thumbnails = True
+            with open(thumb_path, "wb") as f:
+                f.write(thumb_response.content)
+            # sequence['thumbnail_path'] = thumb_path
+        else:
+            print(f"Failed to download thumbnail for {sequence['id']}")
+    except Exception as e:
+        thumbnail_browser.parent.app.print_error(f"Error downloading thumbnail for {sequence['id']}: {e}")
+    if i < sequences_len - 1:
+        # _thread.start_new_thread(self.download_thumbnails, (i + 1, page_identifier))
+        # self.download_thumbnails(i + 1, page_identifier)
+        asyncio.create_task(thumbnail_browser.run_download_thumbnails(i + 1, page_identifier))
+    elif i == sequences_len - 1:
+        print("[download_thumbnails] running gc.collect()")
+        gc.collect()
+    return {
+        "thumb_path": thumb_path,
+    }
 
 class ThumbnailBrowser(Utility):
     def __init__(self, app, parent):
@@ -63,13 +106,19 @@ class ThumbnailBrowser(Utility):
         self.page_identifier = ""
 
     def on_start(self):
-        tmp_dir = get_image_path("thumbs")
+        if self.sequences is None or len(self.sequences) == 0:
+            # _thread.start_new_thread(self.fetch_sequences, ())
+            asyncio.create_task(self.fetch_sequences())
+        thumbs_dir = get_image_path("thumbs")
+        tmp_dir = get_image_path("tmp")
+        try:
+            os.mkdir(thumbs_dir)
+        except Exception as e:
+            print(f"Error creating thumbs directory: {e}")
         try:
             os.mkdir(tmp_dir)
         except Exception as e:
-            print(f"Error creating tmp directory: {e}")
-        if len(self.sequences) == 0:
-            _thread.start_new_thread(self.fetch_sequences, ())
+            print(f"Error creating thumbs directory: {e}")
 
     def get_all_sort_modes(self):
         if self.parent.logged_in():
@@ -81,12 +130,12 @@ class ThumbnailBrowser(Utility):
         all_sort_modes = self.get_all_sort_modes()
         return all_sort_modes[self.sort_mode_index % len(all_sort_modes)]
 
-    def fetch_sequences(self):
+    async def fetch_sequences(self):
         print("Fetching sequences... sort mode:", self.sort_mode())
 
         while not self.app.wifi_manager.is_connected():
             print("[fetch_sequences] Waiting for Wi-Fi connection...")
-            time.sleep(1)
+            await asyncio.sleep(0.2)
         
         self.sequences = []
         try:
@@ -114,49 +163,46 @@ class ThumbnailBrowser(Utility):
                 self.parent.delete_all_files(get_image_path("thumbs"))
                 self.page_identifier = f"{self.sort_mode()}_{self.current_page_index}"
                 if len(self.sequences) > 0:
-                    _thread.start_new_thread(self.download_thumbnails, (0, self.page_identifier))
+                    # _thread.start_new_thread(self.download_thumbnails, (0, self.page_identifier))
+                    # self.download_thumbnails(0, self.page_identifier)
+                    asyncio.create_task(self.run_download_thumbnails(0, self.page_identifier))
             else:
                 self.is_loading_sequences_list = False
                 print("Failed to fetch sequences, status code:", response.status_code)
         except Exception as e:
             self.is_loading_sequences_list = False
             print(f"Error fetching sequences: {e}")
-
-    def download_thumbnails(self, i, page_identifier):
+            raise e
+    
+    async def run_download_thumbnails(self, i, page_identifier):
+        while not self.app.wifi_manager.is_connected():
+            print("[download_thumbnails] Waiting for Wi-Fi connection...")
+            await asyncio.sleep(0.2)
         if self.page_identifier != page_identifier:
             # stop downloading if the page has changed
             return
-        print("Downloading thumbnails...")
-        while not self.app.wifi_manager.is_connected():
-            print("[download_thumbnails] Waiting for Wi-Fi connection...")
-            time.sleep(1)
-        erased_thumbnails = False
-        if i >= len(self.sequences):
-            self.parent.app.print_error(f"WARNING: download_thumbnails called with invalid index: {i} (sequences len: {len(self.sequences)})")
+        sequence = None
+        if self.sequences is not None and i < len(self.sequences):
+            sequence = self.sequences[i]
+        # result = await async_helpers.unblock(
+        #     download_thumbnails,
+        #     self.periodic_func,
+        #     self,
+        #     i,
+        #     sequence,
+        #     len(self.sequences),
+        #     page_identifier
+        # )
+        result = await download_thumbnails(self, i, sequence, len(self.sequences), page_identifier)
+        print("Got thumbnail result:", result)
+        if self.page_identifier != page_identifier:
+            # stop downloading if the page has changed
             return
-        sequence = self.sequences[i]
-        try:
-            thumb_url = f"{api_base_url}/api/sequence/{sequence['id']}/thumbnail"
-            thumb_response = requests.get(thumb_url)
-            if self.page_identifier != page_identifier:
-                return
-            if thumb_response.status_code == 200:
-                print(f"Downloaded thumbnail for {sequence['id']}")
-                thumb_path = get_image_path(f"thumbs/{sequence['id']}.png")
-                if not erased_thumbnails:
-                    erased_thumbnails = True
-                with open(thumb_path, "wb") as f:
-                    f.write(thumb_response.content)
-                sequence['thumbnail_path'] = thumb_path
-            else:
-                print(f"Failed to download thumbnail for {sequence['id']}")
-        except Exception as e:
-            self.parent.app.print_error(f"Error downloading thumbnail for {sequence['id']}: {e}")
-        if i < len(self.sequences) - 1:
-            _thread.start_new_thread(self.download_thumbnails, (i + 1, page_identifier))
-        elif i == len(self.sequences) - 1:
-            print("[download_thumbnails] running gc.collect()")
-            gc.collect()
+        if result is not None and 'thumb_path' in result and result['thumb_path'] is not None:
+            self.sequences[i]['thumbnail_path'] = result['thumb_path']
+
+    async def periodic_func(self):
+        pass
 
     def get_thumbnail_screen_coords(self, i):
         x = (i % 3) * self.icon_size - 90
@@ -173,7 +219,10 @@ class ThumbnailBrowser(Utility):
             ctx.text_baseline = ctx.MIDDLE
             ctx.font_size = 20
             ctx.rgba(0, 0, 0, 1)
-            ctx.move_to(0, -display_y * 0.5 + 15).text(self.sort_mode() + "(" + str(self.current_page_index) + "/" + str(self.max_page_index) + ")")
+            if self.sequences is not None and len(self.sequences) > 0:
+                ctx.move_to(0, -display_y * 0.5 + 15).text(self.sort_mode() + "(" + str(self.current_page_index) + "/" + str(self.max_page_index) + ")")
+            else:
+                ctx.move_to(0, -display_y * 0.5 + 15).text(self.sort_mode())
 
         ctx.image_smoothing = 0
         ctx.rgba(1, 1, 1, 1)
@@ -186,11 +235,12 @@ class ThumbnailBrowser(Utility):
             seq = self.sequences[i]
             x, y = self.get_thumbnail_screen_coords(i)
             if 'thumbnail_path' in seq:
-                ctx.image(seq['thumbnail_path'], x, y, self.icon_size - 5, self.icon_size - 5)
+                ctx.move_to(0, 0).image(seq['thumbnail_path'], x, y, self.icon_size - 5, self.icon_size - 5)
             else:
                 # draw a small grey square if thumbnail is not loaded
                 ctx.rgb(0.5, 0.5, 0.5)
                 ctx.rectangle(x + self.icon_size * 0.3, y + self.icon_size * 0.3, self.icon_size * 0.4, self.icon_size * 0.4).fill()
+                # self.draw_spinning_wheel(ctx, x + self.icon_size * 0.5, y + self.icon_size * 0.5, 16, self.spinner_time)
         
         # draw outline
         outline_x, outline_y = self.get_thumbnail_screen_coords(self.selected_thumbnail)
@@ -283,21 +333,25 @@ class ThumbnailBrowser(Utility):
                     self.current_page_index += 1
                 else:
                     self.current_page_index = 1
-                _thread.start_new_thread(self.fetch_sequences, ())
+                # _thread.start_new_thread(self.fetch_sequences, ())
+                # self.fetch_sequences()
+                asyncio.create_task(self.fetch_sequences())
                 self.selected_thumbnail = 0
                 self.scroll_target_y = 0
                 self.render_start_index = 0
             elif self.selected_thumbnail == self.prev_button_index():
                 if self.current_page_index > 1:
                     self.current_page_index -= 1
-                _thread.start_new_thread(self.fetch_sequences, ())
+                # _thread.start_new_thread(self.fetch_sequences, ())
+                asyncio.create_task(self.fetch_sequences())
                 self.selected_thumbnail = 0
                 self.scroll_target_y = 0
                 self.render_start_index = 0
             elif self.selected_thumbnail == self.login_button_index():
                 self.parent.set_state(LOGIN_STATE)
             elif self.selected_thumbnail < len(self.sequences):
-                _thread.start_new_thread(self.handle_thumbnail_select, ())
+                # _thread.start_new_thread(self.handle_thumbnail_select, ())
+                self.handle_thumbnail_select()
         elif BUTTON_TYPES['UP'] in event.button:
             self.change_sort_mode_index((self.sort_mode_index + 1) % len(self.get_all_sort_modes()))
         return True
@@ -311,7 +365,8 @@ class ThumbnailBrowser(Utility):
         self.selected_thumbnail = 0
         self.scroll_target_y = 0
         self.render_start_index = 0
-        _thread.start_new_thread(self.fetch_sequences, ())
+        # _thread.start_new_thread(self.fetch_sequences, ())
+        asyncio.create_task(self.fetch_sequences())
 
     def get_max_index(self):
         max_index = len(self.sequences)
@@ -354,7 +409,8 @@ class ThumbnailBrowser(Utility):
 
     def handle_thumbnail_select(self):
         self.parent.state = PLAYING_ANIMATION_STATE
-        _thread.start_new_thread(self.parent.animation_player.download_animation, (self.sequences[self.selected_thumbnail],))
+        # _thread.start_new_thread(self.parent.animation_player.download_animation, (self.sequences[self.selected_thumbnail],))
+        asyncio.create_task(self.parent.animation_player.download_animation(self.sequences[self.selected_thumbnail]))
 
 
 class AnimationPlayer(Utility):
@@ -436,7 +492,7 @@ class AnimationPlayer(Utility):
             self.parent.set_state(VIEW_METADATA_STATE)
         return True
 
-    def download_animation(self, sequence):
+    async def download_animation(self, sequence):
         self.current_sequence = sequence
         self.downloading = True
         if 'frame_time_ms' in self.current_sequence and self.current_sequence['frame_time_ms'] > 0:
@@ -453,7 +509,7 @@ class AnimationPlayer(Utility):
 
             while not self.app.wifi_manager.is_connected():
                 print("[download_animation] Waiting for Wi-Fi connection...")
-                time.sleep(1)
+                await asyncio.sleep(0.2)
             frame_response = requests.get(frame_url)
             if not self.downloading or self.current_sequence is None:
                 return
@@ -466,6 +522,7 @@ class AnimationPlayer(Utility):
                 self.current_sequence['local_frames'][i] = frame_path
             else:
                 print(f"Failed to download frame {i} for {self.current_sequence['id']}")
+            await asyncio.sleep(0.1)
         self.downloading = False
         print("[download_animation] running gc.collect()")
         gc.collect()
@@ -502,6 +559,7 @@ class AnimationMetadataViewer(Utility):
 
     def draw(self, ctx):
         ctx.save()
+        clear_background(ctx, (0, 0, 0))
         ctx.rgb(1, 1, 1)
         ctx.font_size = 20
         ctx.text_align = ctx.CENTER
@@ -522,10 +580,11 @@ class AnimationMetadataViewer(Utility):
         if BUTTON_TYPES['CANCEL'] in event.button:
             self.parent.set_state(PLAYING_ANIMATION_STATE)
         elif BUTTON_TYPES['CONFIRM'] in event.button:
-            _thread.start_new_thread(self.favorite_animation, ())
+            # _thread.start_new_thread(self.favorite_animation, ())
+            asyncio.create_task(self.favorite_animation())
         return True
 
-    def favorite_animation(self):
+    async def favorite_animation(self):
         current_sequence_id = self.sequence['id']
         self.is_favorited = not self.is_favorited
         print(f"Setting favorite state for {current_sequence_id} to {self.is_favorited}")
@@ -534,7 +593,7 @@ class AnimationMetadataViewer(Utility):
         try:
             while not self.app.wifi_manager.is_connected():
                 print("[favorite_animation] Waiting for Wi-Fi connection...")
-                time.sleep(1)
+                await asyncio.sleep(0.2)
             if self.is_favorited:
                 response = requests.post(f"{api_base_url}/api/sequence/{current_sequence_id}/mark_favorite", headers=self.parent.get_auth_headers())
             else:
@@ -589,7 +648,9 @@ class LoginUtility(Utility):
         self.login_code = None
         self.code_expired = False
         if not self.parent.logged_in():
-            _thread.start_new_thread(self.fetch_login_code, ())
+            # _thread.start_new_thread(self.fetch_login_code, ())
+            # self.fetch_login_code()
+            asyncio.create_task(self.fetch_login_code())
 
     def update_button_labels(self):
         if self.parent.logged_in():
@@ -604,10 +665,10 @@ class LoginUtility(Utility):
                 "CONFIRM": "Website",
             }, clear=True)
 
-    def fetch_login_code(self):
+    async def fetch_login_code(self):
         while not self.app.wifi_manager.is_connected():
             print("[fetch_login_code] Waiting for Wi-Fi connection...")
-            time.sleep(1)
+            await asyncio.sleep(1)
         try:
             response = requests.post(api_base_url + '/api/get_login_code', json={"badge_uuid": self.parent.badge_uuid}, headers=self.parent.get_auth_headers())
             if response.status_code == 200:
@@ -617,43 +678,47 @@ class LoginUtility(Utility):
                     self.parent.badge_uuid = data.get('badge_uuid')
                     self.parent.save_auth_info(badge_uuid=self.parent.badge_uuid)
                 print(f"Received login code: {self.login_code} and badge uuid: {self.parent.badge_uuid}")
-                self.polling_task = _thread.start_new_thread(self.poll_for_auth, ())
+                # self.polling_task = _thread.start_new_thread(self.poll_for_auth, ())
+                self.polling_task = asyncio.create_task(self.run_poll_for_auth())
             else:
                 print(f"Failed to fetch login code, status code: {response.status_code}")
         except Exception as e:
             print(f"Error fetching login code: {e}")
-
-    def poll_for_auth(self):
+    
+    async def run_poll_for_auth(self):
         while not self.parent.auth_token:
-            time.sleep_ms(5000)
-            if self.parent.state != LOGIN_STATE:
-                return
-            try:
-                while not self.app.wifi_manager.is_connected():
-                    print("[poll_for_auth] Waiting for Wi-Fi connection...")
-                    time.sleep(1)
-                response = requests.post(api_base_url + '/api/check_login_code', json={"code": self.login_code}, headers=self.parent.get_auth_headers())
-                if response.status_code == 200:
-                    data = response.json()
-                    self.parent.auth_token = data.get('auth_token')
-                    if data.get('badge_uuid'):
-                        self.parent.badge_uuid = data.get('badge_uuid')
-                    if self.parent.auth_token:
-                        self.parent.save_auth_info(auth_token=self.parent.auth_token, badge_uuid=self.parent.badge_uuid)
-                        print(f"Received auth token: {self.parent.auth_token} uuid: {self.parent.badge_uuid}")
-                        self.update_button_labels()
-                        break
-                elif response.status_code == 401:
-                    if self.parent.state != LOGIN_STATE:
-                        return
-                    data = response.json()
-                    if data.get('error') == "code_expired":
-                        self.code_expired = True
-                        print("Login code has expired")
-                else:
-                    print(f"Failed to check login code, status code: {response.status_code}")
-            except Exception as e:
-                print(f"Error checking login code: {e}")
+            await asyncio.sleep(5)
+            while not self.app.wifi_manager.is_connected():
+                print("[poll_for_auth] Waiting for Wi-Fi connection...")
+                await asyncio.sleep(1)
+            self.check_for_auth()
+
+    def check_for_auth(self):
+        if self.parent.state != LOGIN_STATE:
+            return
+        try:
+            response = requests.post(api_base_url + '/api/check_login_code', json={"code": self.login_code}, headers=self.parent.get_auth_headers())
+            if response.status_code == 200:
+                data = response.json()
+                self.parent.auth_token = data.get('auth_token')
+                if data.get('badge_uuid'):
+                    self.parent.badge_uuid = data.get('badge_uuid')
+                if self.parent.auth_token:
+                    self.parent.save_auth_info(auth_token=self.parent.auth_token, badge_uuid=self.parent.badge_uuid)
+                    print(f"Received auth token: {self.parent.auth_token} uuid: {self.parent.badge_uuid}")
+                    self.update_button_labels()
+                    return
+            elif response.status_code == 401:
+                if self.parent.state != LOGIN_STATE:
+                    return
+                data = response.json()
+                if data.get('error') == "code_expired":
+                    self.code_expired = True
+                    print("Login code has expired")
+            else:
+                print(f"Failed to check login code, status code: {response.status_code}")
+        except Exception as e:
+            print(f"Error checking login code: {e}")
 
     def draw(self, ctx):
         self.button_labels.draw(ctx)
@@ -682,7 +747,9 @@ class LoginUtility(Utility):
         elif BUTTON_TYPES['RIGHT'] in event.button:
             if self.parent.logged_in():
                 auth_token = self.parent.auth_token
-                _thread.start_new_thread(self.logout_user, (auth_token,))
+                # _thread.start_new_thread(self.logout_user, (auth_token,))
+                # self.logout_user(auth_token)
+                asyncio.create_task(self.logout_user(auth_token))
                 self.parent.auth_token = None
                 self.parent.save_auth_info(auth_token="")
                 self.parent.set_state(DISPLAY_THUMBNAILS_STATE)
@@ -690,11 +757,11 @@ class LoginUtility(Utility):
             self.parent.set_state(DISPLAY_WEBSITE_STATE)
         return True
 
-    def logout_user(self, auth_token):
+    async def logout_user(self, auth_token):
         try:
             while not self.app.wifi_manager.is_connected():
                 print("[logout_user] Waiting for Wi-Fi connection...")
-                time.sleep(1)
+                await asyncio.sleep(0.2)
             response = requests.post(api_base_url + '/api/logout_badge', json={"auth_token": auth_token}, headers=self.parent.get_auth_headers())
             if response.status_code == 200:
                 print("Successfully logged out user")
@@ -723,6 +790,7 @@ class DisplayWebsiteUtility(Utility):
         ctx.save()
         ctx.move_to(0, 0)
         ctx.image_smoothing = 0
+        ctx.rgb(1,1,1)
         ctx.image(self.qr_code_path, -display_x * 0.4, -display_y * 0.4, display_x * 0.8, display_y * 0.8)
 
         ctx.rgb(0, 0, 0)
@@ -854,10 +922,12 @@ class AnimationApp(Utility):
             print(f"Error saving auth token: {e}")
 
     def get_auth_headers(self):
-        return {
-            "auth_token": self.auth_token,
-            "badge_uuid": self.badge_uuid,
-        }
+        headers = {}
+        if self.auth_token is not None:
+            headers["auth_token"] = self.auth_token
+        if self.badge_uuid is not None:
+            headers["badge_uuid"] = self.badge_uuid
+        return headers
 
     def draw(self, ctx):
         clear_background(ctx)
