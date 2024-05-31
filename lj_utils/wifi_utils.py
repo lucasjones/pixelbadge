@@ -76,7 +76,15 @@ class WiFiManager:
                 self._connecting = True
                 self._connect_start_time = self.timer
                 print("[WiFiManager] trying to connect to wifi...")
-                wifi.connect()
+                try:
+                    wifi.disconnect()
+                    wifi.connect()
+                except Exception as e:
+                    print(f"[WiFiManager] error connecting to wifi: {e}")
+                    self._connecting = False
+                    self._connect_start_time = None
+                    if self.on_fail:
+                        self.on_fail()
             self.wifi_connected = False
         else:
             # wifi is connected
@@ -96,3 +104,6 @@ class WiFiManager:
         self._connecting = False
         self._first_connect = True
         self._connect_start_time = None
+    
+    def is_connected(self):
+        return self.wifi_connected

@@ -3,11 +3,12 @@ import asyncio
 import math
 import random
 import machine
-import urequests
+import requests
 import _thread
-import uos
+import os
 import json
 import wifi
+import time
 
 BLUETOOTH_ENABLED = False
 
@@ -22,7 +23,7 @@ from app_components import display_x, display_y
 from app_components.tokens import one_pt
 from tildagonos import tildagonos
 import display
-from sys_colors import hsv_to_rgb, rgb_to_hsv
+# from sys_colors import hsv_to_rgb, rgb_to_hsv
 from events.input import ButtonDownEvent, BUTTON_TYPES, ButtonUpEvent
 from system.patterndisplay.events import PatternDisable, PatternEnable
 from system.scheduler.events import RequestStopAppEvent
@@ -34,6 +35,8 @@ from .lj_utils.lj_display_utils import colors, clear_background
 from .lj_utils.base_types import Utility, ImprovedAppBase
 from .lj_utils.lj_notification import Notification
 from .lj_utils.wifi_utils import check_wifi, WiFiManager
+from .lj_utils.file_utils import file_exists, folder_exists
+from .lj_utils.color import hsv_to_rgb
 
 from .animation_viewer import AnimationApp, api_base_url, APP_BASE_PATH
 from .basic_utils import Torch, Rainbow, Strobe, Spiral, CreditsScreen, UserUploadedDisclaimerScreen
@@ -105,11 +108,12 @@ class MainMenu(Utility):
     
     def check_for_update(self):
         print("Checking for updates...")
-        while not wifi.status():
+        while not self.app.wifi_manager.is_connected():
             print("[check_for_update] Waiting for Wi-Fi connection...")
-            time.sleep(1)
+            time.sleep_ms(100)
+        print("[check_for_update] Wi-Fi connected")
         try:
-            response = urequests.get(api_base_url + "/api/latest_app_version")
+            response = requests.get(api_base_url + "/api/latest_app_version")
             if response.status_code == 200:
                 data = response.json()
                 latest_version = data.get("iota")
@@ -117,6 +121,8 @@ class MainMenu(Utility):
                 if latest_version > APP_VERSION_IOTA:
                     notification = Notification(f"New update available!\nYou are on {APP_VERSION},\nlatest is {data.get('version')}", font_size=one_pt * 9, open=True)
                     self.app.notifications.append(notification)
+            else:
+                self.app.print_error("Failed to check for updates. Response status ", response.status_code)
         except Exception as e:
             print(f"Failed to check for updates: {e}")
 
@@ -191,7 +197,7 @@ class UtilityMenuApp(ImprovedAppBase):
             print("Delta too high, skipping update. Delta:", delta)
             return
         self.utilities[self.current_menu].update(delta)
-        self.update_leds()
+        # self.update_leds()
         self.button_labels.update(delta)
         # don't update notifications for very high delta as they won't animate properly
         if delta < 500:
@@ -251,6 +257,9 @@ class UtilityMenuApp(ImprovedAppBase):
 
     def user_has_seen_disclaimer(self):
         # check if file _seen_disclaimer.text exists
-        seen = "_seen_disclaimer.txt" in uos.listdir(APP_BASE_PATH)
+        # seen = "_seen_disclaimer.txt" in os.listdir(APP_BASE_PATH)
+        seen = file_exists(APP_BASE_PATH + "_seen_disclaimer.txt")
         print("User-generated content disclaimer accepted: ", seen)
         return seen
+
+__app_export__ = UtilityMenuApp

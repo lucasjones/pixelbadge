@@ -1,8 +1,8 @@
 # Lucas Jones 2024
 import json
-import uos
+import os
 import math
-import urequests
+import requests
 import _thread
 import gc
 import time
@@ -18,6 +18,7 @@ from .lj_utils.base_types import Utility, RepeatingButtonManager
 from .lj_utils.lj_button_labels import ButtonLabels
 from .lj_utils.lj_notification import Notification
 from .lj_utils.wifi_utils import check_wifi, wifi_is_connecting
+from .lj_utils.file_utils import file_exists, folder_exists
 
 APP_BASE_PATH = "./apps/pixelbadge/"
 
@@ -63,8 +64,10 @@ class ThumbnailBrowser(Utility):
 
     def on_start(self):
         tmp_dir = get_image_path("thumbs")
-        if not uos.path.exists(tmp_dir):
-            uos.mkdir(tmp_dir)
+        try:
+            os.mkdir(tmp_dir)
+        except Exception as e:
+            print(f"Error creating tmp directory: {e}")
         if len(self.sequences) == 0:
             _thread.start_new_thread(self.fetch_sequences, ())
 
@@ -81,7 +84,7 @@ class ThumbnailBrowser(Utility):
     def fetch_sequences(self):
         print("Fetching sequences... sort mode:", self.sort_mode())
 
-        while not wifi.status():
+        while not self.app.wifi_manager.is_connected():
             print("[fetch_sequences] Waiting for Wi-Fi connection...")
             time.sleep(1)
         
@@ -90,9 +93,9 @@ class ThumbnailBrowser(Utility):
             self.is_loading_sequences_list = True
             if self.sort_mode() == "favorites":
                 favorites = self.parent.load_favorites_file()
-                response = urequests.get(api_base_url + '/api/sequences?page=' + str(self.current_page_index), json=favorites, headers=self.parent.get_auth_headers())
+                response = requests.get(api_base_url + '/api/sequences?page=' + str(self.current_page_index), json=favorites, headers=self.parent.get_auth_headers())
             else:
-                response = urequests.get(api_base_url + '/api/sequences?page=' + str(self.current_page_index) + "&sort=" + self.sort_mode(), headers=self.parent.get_auth_headers())
+                response = requests.get(api_base_url + '/api/sequences?page=' + str(self.current_page_index) + "&sort=" + self.sort_mode(), headers=self.parent.get_auth_headers())
             if response.status_code == 200:
                 result = response.json()
                 if result.get('sequences') is not None:
@@ -124,7 +127,7 @@ class ThumbnailBrowser(Utility):
             # stop downloading if the page has changed
             return
         print("Downloading thumbnails...")
-        while not wifi.status():
+        while not self.app.wifi_manager.is_connected():
             print("[download_thumbnails] Waiting for Wi-Fi connection...")
             time.sleep(1)
         erased_thumbnails = False
@@ -134,7 +137,7 @@ class ThumbnailBrowser(Utility):
         sequence = self.sequences[i]
         try:
             thumb_url = f"{api_base_url}/api/sequence/{sequence['id']}/thumbnail"
-            thumb_response = urequests.get(thumb_url)
+            thumb_response = requests.get(thumb_url)
             if self.page_identifier != page_identifier:
                 return
             if thumb_response.status_code == 200:
@@ -448,10 +451,10 @@ class AnimationPlayer(Utility):
             print(f"Downloading frame {i} for {self.current_sequence['id']}")
             frame_url = f"{api_base_url}/images/{self.current_sequence['id']}/{frame_id}"
 
-            while not wifi.status():
+            while not self.app.wifi_manager.is_connected():
                 print("[download_animation] Waiting for Wi-Fi connection...")
                 time.sleep(1)
-            frame_response = urequests.get(frame_url)
+            frame_response = requests.get(frame_url)
             if not self.downloading or self.current_sequence is None:
                 return
             if frame_response.status_code == 200:
@@ -471,7 +474,7 @@ class AnimationPlayer(Utility):
         if self.current_sequence:
             for frame_path in self.current_sequence['local_frames']:
                 if frame_path is not None:
-                    uos.remove(frame_path)
+                    os.remove(frame_path)
             self.current_sequence = None
             print("[AnimationPlayer.cleanup] running gc.collect()")
             gc.collect()
@@ -529,13 +532,13 @@ class AnimationMetadataViewer(Utility):
         if not self.is_favorited:
             self.save_favorite(current_sequence_id, self.is_favorited)
         try:
-            while not wifi.status():
+            while not self.app.wifi_manager.is_connected():
                 print("[favorite_animation] Waiting for Wi-Fi connection...")
                 time.sleep(1)
             if self.is_favorited:
-                response = urequests.post(f"{api_base_url}/api/sequence/{current_sequence_id}/mark_favorite", headers=self.parent.get_auth_headers())
+                response = requests.post(f"{api_base_url}/api/sequence/{current_sequence_id}/mark_favorite", headers=self.parent.get_auth_headers())
             else:
-                response = urequests.post(f"{api_base_url}/api/sequence/{current_sequence_id}/remove_favorite", headers=self.parent.get_auth_headers())
+                response = requests.post(f"{api_base_url}/api/sequence/{current_sequence_id}/remove_favorite", headers=self.parent.get_auth_headers())
             if response.status_code == 200:
                 print("Successfully updated animation favorite state")
                 self.sequence['favorited_by_current_user'] = self.is_favorited
@@ -602,11 +605,11 @@ class LoginUtility(Utility):
             }, clear=True)
 
     def fetch_login_code(self):
-        while not wifi.status():
+        while not self.app.wifi_manager.is_connected():
             print("[fetch_login_code] Waiting for Wi-Fi connection...")
             time.sleep(1)
         try:
-            response = urequests.post(api_base_url + '/api/get_login_code', json={"badge_uuid": self.parent.badge_uuid}, headers=self.parent.get_auth_headers())
+            response = requests.post(api_base_url + '/api/get_login_code', json={"badge_uuid": self.parent.badge_uuid}, headers=self.parent.get_auth_headers())
             if response.status_code == 200:
                 data = response.json()
                 self.login_code = data.get('code')
@@ -626,10 +629,10 @@ class LoginUtility(Utility):
             if self.parent.state != LOGIN_STATE:
                 return
             try:
-                while not wifi.status():
+                while not self.app.wifi_manager.is_connected():
                     print("[poll_for_auth] Waiting for Wi-Fi connection...")
                     time.sleep(1)
-                response = urequests.post(api_base_url + '/api/check_login_code', json={"code": self.login_code}, headers=self.parent.get_auth_headers())
+                response = requests.post(api_base_url + '/api/check_login_code', json={"code": self.login_code}, headers=self.parent.get_auth_headers())
                 if response.status_code == 200:
                     data = response.json()
                     self.parent.auth_token = data.get('auth_token')
@@ -689,10 +692,10 @@ class LoginUtility(Utility):
 
     def logout_user(self, auth_token):
         try:
-            while not wifi.status():
+            while not self.app.wifi_manager.is_connected():
                 print("[logout_user] Waiting for Wi-Fi connection...")
                 time.sleep(1)
-            response = urequests.post(api_base_url + '/api/logout_badge', json={"auth_token": auth_token}, headers=self.parent.get_auth_headers())
+            response = requests.post(api_base_url + '/api/logout_badge', json={"auth_token": auth_token}, headers=self.parent.get_auth_headers())
             if response.status_code == 200:
                 print("Successfully logged out user")
             else:
@@ -788,21 +791,24 @@ class AnimationApp(Utility):
         self.states[self.state].on_start()
 
     def delete_all_files(self, directory):
-        print("Deleting all files in", directory)
-        if directory == "":
-            print("Warning: Trying to delete all files in root directory, aborting.")
-            return
-        for file in uos.listdir(directory):
-            print("Deleting", directory + "/" + file, "...")
-            try:
-                uos.remove(directory + "/" + file)
-            except Exception as e:
-                print(f"Error deleting {directory}/{file}: {e}")
-        print("Finished deleting all files in", directory)
+        try:
+            print("Deleting all files in", directory)
+            if directory == "":
+                print("Warning: Trying to delete all files in root directory, aborting.")
+                return
+            for file in os.listdir(directory):
+                print("Deleting", directory + "/" + file, "...")
+                try:
+                    os.remove(directory + "/" + file)
+                except Exception as e:
+                    print(f"Error deleting {directory}/{file}: {e}")
+            print("Finished deleting all files in", directory)
+        except Exception as e:
+            self.app.print_error(f"Error deleting all files in {directory}: {e}")
 
     def load_favorites_file(self):
         try:
-            if uos.path.exists(favorites_file):
+            if folder_exists(favorites_file):
                 with open(favorites_file, "r") as f:
                     favorites = json.load(f)
                     return favorites
@@ -822,7 +828,7 @@ class AnimationApp(Utility):
 
     def load_auth_info(self):
         try:
-            if uos.path.exists(auth_file):
+            if folder_exists(auth_file):
                 with open(auth_file, "r") as f:
                     auth_data = json.load(f)
                     self.auth_token = auth_data.get("auth_token")
@@ -834,7 +840,7 @@ class AnimationApp(Utility):
     def save_auth_info(self, auth_token=None, badge_uuid=None):
         try:
             auth_data = {}
-            if uos.path.exists(auth_file):
+            if folder_exists(auth_file):
                 with open(auth_file, "r") as f:
                     auth_data = json.load(f)
             if auth_token is not None:

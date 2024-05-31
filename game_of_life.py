@@ -2,12 +2,13 @@ import random
 
 from events.input import ButtonDownEvent, BUTTON_TYPES, ButtonUpEvent
 from app_components import display_x, display_y
-from sys_colors import hsv_to_rgb, rgb_to_hsv
+# from sys_colors import hsv_to_rgb, rgb_to_hsv
 from tildagonos import tildagonos
 
 from .lj_utils.lj_display_utils import colors, clear_background
 from .lj_utils.base_types import Utility
 from .lj_utils.lj_button_labels import ButtonLabels
+from .lj_utils.color import hsv_to_rgb
 
 class ConwaysGameOfLife(Utility):
     def __init__(self, app):
