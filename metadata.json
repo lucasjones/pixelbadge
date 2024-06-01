@@ -1,6 +1,6 @@
 {
-    "callable": "UtilityMenuApp",
-    "name": "PixelBadge",
-    "category": "utilities",
-    "hidden": false
+    "name": "pixelbadge2",
+    "hidden": false,
+    "path": "apps.pixelbadge2.app",
+    "callable": "__app_export__"
 }

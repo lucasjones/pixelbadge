@@ -38,7 +38,7 @@ from .lj_utils.wifi_utils import check_wifi, WiFiManager
 from .lj_utils.file_utils import file_exists, folder_exists
 from .lj_utils.color import hsv_to_rgb
 
-from .animation_viewer import AnimationApp, api_base_url, APP_BASE_PATH
+from .animation_viewer import AnimationApp, api_base_url, APP_BASE_PATH, PLAYING_ANIMATION_STATE
 from .basic_utils import Torch, Rainbow, Strobe, Spiral, CreditsScreen, UserUploadedDisclaimerScreen
 from .game_of_life import ConwaysGameOfLife
 from .visual_effects import RandomGrid
@@ -109,8 +109,10 @@ class UtilityMenuApp(ImprovedAppBase):
     def __init__(self):
         super().__init__()
         self.current_menu = "main"
+        self.animation_app = AnimationApp(self)
+        self.animation_app_state = "Pixel Art"
         self.utilities = {
-            "Pixel Art": AnimationApp(self),
+            self.animation_app_state: self.animation_app,
             "torch": Torch(self),
             "rainbow": Rainbow(self),
             "strobe": Strobe(self),
@@ -118,7 +120,15 @@ class UtilityMenuApp(ImprovedAppBase):
             "Game of Life": ConwaysGameOfLife(self),
             "Snap Game": SnapGame(self),
         }
-        self.utilities["main"] = MainMenu(self, items=list(self.utilities.keys()))
+        self.utilities["main"] = MainMenu(self, items=[
+            self.animation_app_state,
+            "torch",
+            "rainbow",
+            "strobe",
+            "spiral",
+            "Game of Life",
+            "Snap Game",
+        ])
         self.utilities["credits"] = CreditsScreen(self)
         self.utilities["pixel_art_disclaimer"] = UserUploadedDisclaimerScreen(self, APP_BASE_PATH)
         self.button_labels = ButtonLabels(
@@ -205,7 +215,7 @@ class UtilityMenuApp(ImprovedAppBase):
         eventbus.emit(PatternDisable())
         self.button_labels.reset()
         self.utilities[self.current_menu].on_start()
-        asyncio.create_task(self.run_check_for_update())
+        # asyncio.create_task(self.run_check_for_update())
     
     def on_app_unfocused(self):
         super().on_app_unfocused()
@@ -221,7 +231,7 @@ class UtilityMenuApp(ImprovedAppBase):
     # WiFiManager event handlers
     def on_wifi_connected(self):
         print("WiFi Connected")
-        notification = Notification("Wi-Fi Connected", open=True, animate_duration=200, display_time=1000)
+        notification = Notification("Connected", open=True, animate_duration=200, display_time=1000)
         self.notifications.append(notification)
         
 
@@ -234,6 +244,14 @@ class UtilityMenuApp(ImprovedAppBase):
         print("WiFi Disconnected")
         notification = Notification("Wi-Fi Disconnected", open=True, animate_duration=200, display_time=1000)
         self.notifications.append(notification)
+    
+    def should_show_wifi_notification(self):
+        # don't show if an animation is playing and is fully downloaded
+        if self.current_menu == self.animation_app_state:
+            if self.animation_app.state == PLAYING_ANIMATION_STATE:
+                if not self.animation_app.animation_player.downloading:
+                    return False
+        return True
 
     def user_has_seen_disclaimer(self):
         # check if file _seen_disclaimer.text exists
@@ -258,7 +276,7 @@ class UtilityMenuApp(ImprovedAppBase):
                 latest_version = data.get("iota")
                 print("Update check result:", data.get("version"), "iota:", latest_version, "local version:", APP_VERSION, "iota:", APP_VERSION_IOTA)
                 if latest_version > APP_VERSION_IOTA:
-                    notification = Notification(f"New update available!\nYou are on {APP_VERSION},\nlatest is {data.get('version')}", font_size=one_pt * 9, open=True)
+                    notification = Notification(f"New app update available!\nYou are on {APP_VERSION},\nlatest is {data.get('version')}", font_size=one_pt * 9, open=True)
                     self.notifications.append(notification)
             else:
                 self.print_error("Failed to check for updates. Response status ", response.status_code)
