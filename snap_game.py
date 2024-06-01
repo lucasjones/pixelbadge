@@ -90,8 +90,8 @@ class SnapGame(Utility):
         self.win_cooldown -= delta
         if self.state == "waiting":
             # set LEDS 1,2,3,10,11,12 to red, 4,5,6,7,8,9 to blue
-            red_color = self.player_color("red")
-            blue_color = self.player_color("blue")
+            red_color = self.player_color_led("red")
+            blue_color = self.player_color_led("blue")
             for i in range(3):
                 tildagonos.leds[i+1] = red_color
                 tildagonos.leds[i+10] = red_color
@@ -103,13 +103,13 @@ class SnapGame(Utility):
             if self.flash_time <= 0:
                 self.state = "flashing"
                 for i in range(12):
-                    tildagonos.leds[i+1] = (1, 1, 1)
+                    tildagonos.leds[i+1] = (255, 255, 255)
             else:
                 for i in range(12):
                     tildagonos.leds[i+1] = (0, 0, 0)
             tildagonos.leds.write()
         elif self.state == "winner" and self.winner:
-            color = self.player_color(self.winner)
+            color = self.player_color_led(self.winner)
             for i in range(12):
                 tildagonos.leds[i+1] = color
             tildagonos.leds.write()
@@ -124,6 +124,14 @@ class SnapGame(Utility):
             return (0, 0, 1)
         else:
             return (0, 1, 0)
+    
+    def player_color_led(self, name):
+        if name == "red":
+            return (255, 0, 0)
+        elif name == "blue":
+            return (0, 0, 255)
+        else:
+            return (0, 255, 0)
 
     def handle_buttondown(self, event: ButtonDownEvent):
         if self.state == "waiting":

@@ -5,6 +5,7 @@ import math
 import async_helpers
 import requests
 import _thread
+import binascii
 import gc
 import time
 import wifi
@@ -22,6 +23,7 @@ from .lj_utils.wifi_utils import check_wifi, wifi_is_connecting
 from .lj_utils.file_utils import file_exists, folder_exists
 
 APP_BASE_PATH = "/apps/pixelbadge/"
+DATA_BASE_PATH = "/data/pixelbadge/"
 USE_IMAGE_FALLBACK = True
 # for f in os.listdir("/apps"):
 #     if app.startswith("lucasjones-pixelbadge"):
@@ -40,9 +42,9 @@ DISPLAY_WEBSITE_STATE = 5
 
 # api_base_url = "http://localhost:8080"
 api_base_url = "https://badge.pixelbadge.xyz"
-favorites_file = get_image_path("favorite_animations.json")
-auth_file = get_image_path("auth_token.json")
-
+# favorites_file = get_image_path("favorite_animations.json")
+auth_file = DATA_BASE_PATH + "auth_token.json"
+favorites_file = DATA_BASE_PATH + "favorite_animations.json"
 
 async def download_thumbnails(thumbnail_browser, i, sequence, sequences_len, page_identifier):
     print("Downloading thumbnails...")
@@ -172,8 +174,9 @@ class ThumbnailBrowser(Utility):
 
     async def fetch_sequences(self):
         print("Fetching sequences... sort mode:", self.sort_mode())
-        max_retries = 15
+        max_retries = 30
         retries = 0
+        should_gc_collect = False
 
         while retries < max_retries:
             if retries > 0:
@@ -190,9 +193,15 @@ class ThumbnailBrowser(Utility):
                 self.is_loading_sequences_list = True
                 if self.sort_mode() == "favorites":
                     favorites = self.parent.load_favorites_file()
-                    response = requests.get(api_base_url + '/api/sequences?page=' + str(self.current_page_index), json=favorites, headers=self.parent.get_auth_headers())
+                    req_url = api_base_url + '/api/sequences?page=' + str(self.current_page_index)
+                    if USE_IMAGE_FALLBACK:
+                        req_url += "&fallback=true"
+                    response = requests.get(req_url, json=favorites, headers=self.parent.get_auth_headers())
                 else:
-                    response = requests.get(api_base_url + '/api/sequences?page=' + str(self.current_page_index) + "&sort=" + self.sort_mode(), headers=self.parent.get_auth_headers())
+                    req_url = api_base_url + '/api/sequences?page=' + str(self.current_page_index) + "&sort=" + self.sort_mode()
+                    if USE_IMAGE_FALLBACK:
+                        req_url += "&fallback=true"
+                    response = requests.get(req_url, headers=self.parent.get_auth_headers())
                 if response.status_code == 200:
                     result = response.json()
                     if result.get('sequences') is not None:
@@ -211,7 +220,12 @@ class ThumbnailBrowser(Utility):
                     self.any_sequences_loaded = True
                     self.fetch_sequences_error = False
                     self.parent.delete_all_files(get_image_path("thumbs"))
-                    if len(self.sequences) > 0:
+                    if 'thumbnail_path' in self.sequences[0]:
+                        # decode base64 for each thumbnail
+                        for seq in self.sequences:
+                            seq['thumbnail_path'] = binascii.a2b_base64(seq['thumbnail_path'])
+                        should_gc_collect = True
+                    if len(self.sequences) > 0 and 'thumbnail_path' not in self.sequences[0]:
                         # _thread.start_new_thread(self.download_thumbnails, (0, self.page_identifier))
                         # self.download_thumbnails(0, self.page_identifier)
                         asyncio.create_task(self.run_download_thumbnails(0, self.page_identifier()))
@@ -226,6 +240,10 @@ class ThumbnailBrowser(Utility):
         if retries >= max_retries:
             self.fetch_sequences_error = True
             print("Failed to fetch sequences after max retries")
+        
+        if should_gc_collect:
+            print("[fetch_sequences] gc.collect()")
+            gc.collect()
     
     async def run_download_thumbnails(self, i, page_identifier):
         while not self.app.wifi_manager.is_connected():
@@ -769,6 +787,7 @@ class LoginUtility(Utility):
         self.login_code = None
         self.polling_task = None
         self.code_expired = False
+        self.fetch_task = None
         self.button_labels = ButtonLabels(app, {},
             text_color=(1, 1, 1),
             text_pressed_color=(0, 0, 0),
@@ -779,10 +798,12 @@ class LoginUtility(Utility):
         self.update_button_labels()
         self.login_code = None
         self.code_expired = False
+        self.login_code_error = False
+        self.fetch_task = None
         if not self.parent.logged_in():
             # _thread.start_new_thread(self.fetch_login_code, ())
             # self.fetch_login_code()
-            asyncio.create_task(self.fetch_login_code())
+            self.fetch_task = asyncio.create_task(self.fetch_login_code())
 
     def update_button_labels(self):
         if self.parent.logged_in():
@@ -798,27 +819,46 @@ class LoginUtility(Utility):
             }, clear=True)
 
     async def fetch_login_code(self):
-        while not self.app.wifi_manager.is_connected():
-            print("[fetch_login_code] Waiting for Wi-Fi connection...")
-            await asyncio.sleep(1)
-        try:
-            response = requests.post(api_base_url + '/api/get_login_code', json={"badge_uuid": self.parent.badge_uuid}, headers=self.parent.get_auth_headers())
-            if response.status_code == 200:
-                data = response.json()
-                self.login_code = data.get('code')
-                if data.get('badge_uuid') is not None:
-                    self.parent.badge_uuid = data.get('badge_uuid')
-                    self.parent.save_auth_info(badge_uuid=self.parent.badge_uuid)
-                print(f"Received login code: {self.login_code} and badge uuid: {self.parent.badge_uuid}")
-                # self.polling_task = _thread.start_new_thread(self.poll_for_auth, ())
-                self.polling_task = asyncio.create_task(self.run_poll_for_auth())
-            else:
-                print(f"Failed to fetch login code, status code: {response.status_code}")
-        except Exception as e:
-            print(f"Error fetching login code: {e}")
+        max_retries = 10
+        retries = 0
+        error = False
+        while retries < max_retries:
+            if self.fetch_task is None:
+                return
+            error = False
+            if retries > 0:
+                print(f"Fetch login code retry {retries}/{max_retries}")
+                await asyncio.sleep(1)
+            retries += 1
+            while not self.app.wifi_manager.is_connected():
+                print("[fetch_login_code] Waiting for Wi-Fi connection...")
+                await asyncio.sleep(0.2)
+            try:
+                response = requests.post(api_base_url + '/api/get_login_code', json={"badge_uuid": self.parent.badge_uuid}, headers=self.parent.get_auth_headers())
+                if response.status_code == 200:
+                    data = response.json()
+                    self.login_code = data.get('code')
+                    if data.get('badge_uuid') is not None:
+                        self.parent.badge_uuid = data.get('badge_uuid')
+                        self.parent.save_auth_info(badge_uuid=self.parent.badge_uuid)
+                    print(f"Received login code: {self.login_code} and badge uuid: {self.parent.badge_uuid}")
+                    # self.polling_task = _thread.start_new_thread(self.poll_for_auth, ())
+                    self.polling_task = asyncio.create_task(self.run_poll_for_auth())
+                    return
+                else:
+                    print(f"Failed to fetch login code, status code: {response.status_code}")
+                    error = True
+            except Exception as e:
+                print(f"Error fetching login code: {e}")
+                error = True
+        if error:
+            self.login_code_error = True
+        
     
     async def run_poll_for_auth(self):
         while self.parent.auth_token is None:
+            if self.polling_task is None:
+                return
             await asyncio.sleep(5)
             while not self.app.wifi_manager.is_connected():
                 print("[poll_for_auth] Waiting for Wi-Fi connection...")
@@ -866,6 +906,8 @@ class LoginUtility(Utility):
             ctx.move_to(0, 0).text(f"You are logged in!")
         elif self.code_expired:
             ctx.move_to(0, 0).text("Code expired")
+        elif self.login_code_error:
+            ctx.move_to(0, 0).text("Error getting login code")
         elif self.login_code:
             ctx.move_to(0, -60).text(f"Login Code:")
             ctx.rgb(0, 0, 0)
@@ -906,8 +948,8 @@ class LoginUtility(Utility):
             print(f"Error logging out user: {e}")
 
     def on_exit(self):
-        if self.polling_task:
-            self.polling_task = None
+        self.polling_task = None
+        self.fetch_task = None
 
 
 class DisplayWebsiteUtility(Utility):
@@ -926,14 +968,15 @@ class DisplayWebsiteUtility(Utility):
         ctx.move_to(0, 0)
         ctx.image_smoothing = 0
         ctx.rgb(1,1,1)
-        ctx.image(self.qr_code_path, -display_x * 0.4, -display_y * 0.4, display_x * 0.8, display_y * 0.8)
+        # ctx.image(self.qr_code_path, -display_x * 0.4, -display_y * 0.4, display_x * 0.8, display_y * 0.8)
 
         ctx.rgb(0, 0, 0)
         ctx.font_size = 20
         ctx.text_align = ctx.CENTER
         ctx.text_baseline = ctx.MIDDLE
         ctx.move_to(0, -100).text("Website:")
-        ctx.move_to(0, 100).text("http://pixelbadge.xyz")
+        ctx.font_size = 24
+        ctx.move_to(0, 0).text("https://pixelbadge.xyz")
 
         ctx.restore()
         self.button_labels.draw(ctx)
@@ -1012,7 +1055,7 @@ class AnimationApp(Utility):
 
     def load_favorites_file(self):
         try:
-            if folder_exists(favorites_file):
+            if file_exists(favorites_file):
                 with open(favorites_file, "r") as f:
                     favorites = json.load(f)
                     return favorites
@@ -1032,7 +1075,7 @@ class AnimationApp(Utility):
 
     def load_auth_info(self):
         try:
-            if folder_exists(auth_file):
+            if file_exists(auth_file):
                 with open(auth_file, "r") as f:
                     auth_data = json.load(f)
                     self.auth_token = auth_data.get("auth_token")
@@ -1044,7 +1087,7 @@ class AnimationApp(Utility):
     def save_auth_info(self, auth_token=None, badge_uuid=None):
         try:
             auth_data = {}
-            if folder_exists(auth_file):
+            if file_exists(auth_file):
                 with open(auth_file, "r") as f:
                     auth_data = json.load(f)
             if auth_token is not None:

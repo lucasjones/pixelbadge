@@ -38,7 +38,7 @@ from .lj_utils.wifi_utils import check_wifi, WiFiManager
 from .lj_utils.file_utils import file_exists, folder_exists
 from .lj_utils.color import hsv_to_rgb
 
-from .animation_viewer import AnimationApp, api_base_url, APP_BASE_PATH, PLAYING_ANIMATION_STATE
+from .animation_viewer import AnimationApp, api_base_url, APP_BASE_PATH, DATA_BASE_PATH, PLAYING_ANIMATION_STATE
 from .basic_utils import Torch, Rainbow, Strobe, Spiral, CreditsScreen, UserUploadedDisclaimerScreen, WaitingForWifiScreen
 from .game_of_life import ConwaysGameOfLife
 from .visual_effects import RandomGrid
@@ -85,6 +85,7 @@ class MainMenu(Utility):
         if self.timer > self.led_update_interval or self.led_colors is None:
             # set led colors to random hues
             self.led_colors = [hsv_to_rgb((random.randint(0, 360) / 360) * math.tau, 1, 0.3) for _ in range(12)]
+            self.led_colors = [(int(i[0] * 255), int(i[1] * 255), int(i[2] * 255)) for i in self.led_colors]
             self.timer = 0.0
 
     def update_leds(self):
@@ -100,6 +101,7 @@ class MainMenu(Utility):
             for i in range(12):
                 tildagonos.leds[i+1] = (0, 0, 0)
         tildagonos.leds.write()
+        pass
     
     def handle_buttondown(self, event: ButtonDownEvent):
         self.menu._handle_buttondown(event)
@@ -108,13 +110,22 @@ class MainMenu(Utility):
 class UtilityMenuApp(ImprovedAppBase):
     def __init__(self):
         super().__init__()
+        try:
+            os.mkdir("/data")
+        except Exception as e:
+            print(f"Error creating /data directory: {e}")
+        try:
+            os.mkdir("/data/pixelbadge")
+        except Exception as e:
+            print(f"Error creating /data/pixelbadge directory: {e}")
+        
         self.current_menu = "main"
         self.animation_app = AnimationApp(self)
         self.animation_app_state = "Pixel Art"
         self.utilities = {
             self.animation_app_state: self.animation_app,
             "torch": Torch(self),
-            "rainbow": Rainbow(self),
+            # "rainbow": Rainbow(self),
             "strobe": Strobe(self),
             "spiral": Spiral(self),
             "Game of Life": ConwaysGameOfLife(self),
@@ -123,14 +134,14 @@ class UtilityMenuApp(ImprovedAppBase):
         self.utilities["main"] = MainMenu(self, items=[
             self.animation_app_state,
             "torch",
-            "rainbow",
+            # "rainbow",
             "strobe",
             "spiral",
             "Game of Life",
             "Snap Game",
         ])
         self.utilities["credits"] = CreditsScreen(self)
-        self.utilities["pixel_art_disclaimer"] = UserUploadedDisclaimerScreen(self, APP_BASE_PATH)
+        self.utilities["pixel_art_disclaimer"] = UserUploadedDisclaimerScreen(self, DATA_BASE_PATH)
         self.waiting_wifi = WaitingForWifiScreen(self)
         self.utilities["waiting_wifi"] = self.waiting_wifi
         self.button_labels = ButtonLabels(
@@ -191,7 +202,7 @@ class UtilityMenuApp(ImprovedAppBase):
             print("Delta too high, skipping update. Delta:", delta)
             return
         self.utilities[self.current_menu].update(delta)
-        # self.update_leds()
+        self.update_leds()
         self.button_labels.update(delta)
         # don't update notifications for very high delta as they won't animate properly
         if delta < 500:
@@ -261,7 +272,7 @@ class UtilityMenuApp(ImprovedAppBase):
     def user_has_seen_disclaimer(self):
         # check if file _seen_disclaimer.text exists
         # seen = "_seen_disclaimer.txt" in os.listdir(APP_BASE_PATH)
-        seen = file_exists(APP_BASE_PATH + "_seen_disclaimer.txt")
+        seen = file_exists(DATA_BASE_PATH + "_seen_disclaimer.txt")
         print("User-generated content disclaimer accepted: ", seen)
         return seen
     

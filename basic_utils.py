@@ -59,7 +59,7 @@ class Rainbow(Utility):
     def update_leds(self):
         for i in range(12):
             color = hsv_to_rgb(((self.screen_hue + i * 30) % 360 / 360) * math.tau, 1, 1)
-            tildagonos.leds[i+1] = color
+            tildagonos.leds[i+1] = (int(color[0] * 255), int(color[1] * 255), int(color[2] * 255))
         tildagonos.leds.write()
 
     def handle_buttondown(self, event: ButtonDownEvent):
@@ -122,7 +122,7 @@ class Spiral(Utility):
     def draw(self, ctx):
         # Calculate the start and end angles for the arc in radians
         # 0 degrees is at the right side of the screen (going clockwise), and is next to LED 4
-        angle_start = math.radians(self.led_index * 30 - 30 * 3)
+        angle_start = math.radians(self.led_index * 30 - 30 * 1.5)
         angle_end = angle_start + math.radians(30)
 
         # print(f"Drawing arc from {math.degrees(angle_start)} to {math.degrees(angle_end)} degrees")
