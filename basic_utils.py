@@ -247,3 +247,39 @@ class UserUploadedDisclaimerScreen(Utility):
             self.app.set_screen("Pixel Art")
             return True
         return False
+
+class WaitingForWifiScreen(Utility):
+    def __init__(self, app):
+        super().__init__(app)
+        self.screen_hue = 0
+        self.button_labels = ButtonLabels(self.app,
+            labels={
+                "CANCEL": "Back",
+            },
+            text_color=(1,1,1),
+            bg_pressed_color=(1,1,1),
+            text_pressed_color=(0,0,0),
+            fade_out_time=0,
+        )
+        self.next_screen = self.app.animation_app_state
+
+    def draw(self, ctx):
+        clear_background(ctx, (0, 0, 0))
+        self.button_labels.draw(ctx)
+        ctx.rgb(0.6, 0.6, 0.6)
+        ctx.font_size = 30
+        ctx.text_align = ctx.CENTER
+        ctx.text_baseline = ctx.MIDDLE
+        ctx.move_to(0, 0).text("Waiting for WiFi...")
+    
+    def update(self, delta):
+        # self.screen_hue = (self.screen_hue + 1) % 360
+        self.button_labels.update(delta)
+        if self.app.wifi_manager.is_connected():
+            self.app.set_screen(self.next_screen)
+    
+    def handle_buttondown(self, event: ButtonDownEvent):
+        if BUTTON_TYPES["CANCEL"] in event.button:
+            self.app.set_screen("main")
+            return True
+        return False

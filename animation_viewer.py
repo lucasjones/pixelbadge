@@ -57,6 +57,7 @@ async def download_thumbnails(thumbnail_browser, i, sequence, sequences_len, pag
         if retries > 0:
             print(f"Download of thumbnail for {sequence['id']} failed, retrying... (retry {retries}/{max_retries})")
             await asyncio.sleep(1)
+        retries += 1
         try:
             thumb_url = f"{api_base_url}/api/sequence/{sequence['id']}/thumbnail"
             if USE_IMAGE_FALLBACK:
@@ -69,8 +70,9 @@ async def download_thumbnails(thumbnail_browser, i, sequence, sequences_len, pag
             if thumb_response.status_code == 200:
                 print(f"Downloaded thumbnail for {sequence['id']}")
                 if USE_IMAGE_FALLBACK:
-                    thumb_data = thumb_response.json()
-                    thumb_path = thumb_data
+                    # thumb_data = thumb_response.json()
+                    # thumb_path = thumb_data
+                    thumb_path = thumb_response.content
                 else:
                     img_file = f"thumbs/{sequence['id']}.png"
                     thumb_path = get_image_path(img_file)
@@ -99,14 +101,21 @@ async def download_thumbnails(thumbnail_browser, i, sequence, sequences_len, pag
     return None
 
 def fallback_image_renderer(ctx, data, x, y, w, h):
-    # renders the image fallback json using rectangles
-    rect_width = w / data['width']
-    rect_height = h / data['height']
-    for j in range(data['height']):
-        for i in range(data['width']):
-            color = data['colors'][j * data['width'] + i]
-            ctx.rgb(color[0], color[1], color[2])
+    width = data[0]
+    height = data[1]
+    rect_width = w / width
+    rect_height = h / height
+    index = 2  # Start after width and height
+    pixel_mul = 1.0 / 255.0
+
+    for j in range(height):
+        for i in range(width):
+            r = data[index]
+            g = data[index + 1]
+            b = data[index + 2]
+            ctx.rgb(r * pixel_mul, g * pixel_mul, b * pixel_mul)
             ctx.rectangle(x + i * rect_width, y + j * rect_height, rect_width + 1, rect_height + 1).fill()
+            index += 3
 
 class ThumbnailBrowser(Utility):
     def __init__(self, app, parent):
@@ -170,6 +179,7 @@ class ThumbnailBrowser(Utility):
             if retries > 0:
                 print(f"Fetch sequences retry {retries}/{max_retries}")
                 await asyncio.sleep(1)
+            retries += 1
             
             while not self.app.wifi_manager.is_connected():
                 print("[fetch_sequences] Waiting for Wi-Fi connection...")
@@ -500,6 +510,8 @@ class AnimationPlayer(Utility):
                     ctx.text_baseline = ctx.MIDDLE
 
                     progress_str = f"{self.downloaded_count}/{self.total_to_download}..."
+                    if not self.app.wifi_manager.is_connected():
+                        progress_str = "WiFi..."
                     text_width = ctx.text_width(progress_str)
                     # draw bg rect with rounded corners
                     ctx.rgb(0.0, 0.0, 0.0)
@@ -608,31 +620,35 @@ class AnimationPlayer(Utility):
             while not self.app.wifi_manager.is_connected():
                 print("[download_animation] Waiting for Wi-Fi connection...")
                 await asyncio.sleep(0.2)
-            frame_response = requests.get(frame_url)
-            if not self.downloading or self.current_sequence is None:
-                self.downloading = False
-                return
-            if frame_response.status_code == 200:
-                print(f"Downloaded frame {i} for {self.current_sequence['id']}")
-                if USE_IMAGE_FALLBACK:
-                    try:
-                        frame_data = frame_response.json()
-                        if 'colors' in frame_data:
-                            self.current_sequence['local_frames'][i] = frame_data
-                        else:
-                            print(f"Failed to download frame {i} for {self.current_sequence['id']}: no colors in response")
-                    except Exception as e:
-                        print(f"Error parsing fallback frame response: {e}")
+            try:
+                frame_response = requests.get(frame_url)
+                if not self.downloading or self.current_sequence is None:
+                    self.downloading = False
+                    return
+                if frame_response.status_code == 200:
+                    print(f"Downloaded frame {i} for {self.current_sequence['id']}")
+                    if USE_IMAGE_FALLBACK:
+                        try:
+                            # frame_data = frame_response.json()
+                            # if 'colors' in frame_data:
+                            #     self.current_sequence['local_frames'][i] = frame_data
+                            # else:
+                            #     print(f"Failed to download frame {i} for {self.current_sequence['id']}: no colors in response")
+                            self.current_sequence['local_frames'][i] = frame_response.content
+                        except Exception as e:
+                            print(f"Error parsing fallback frame response: {e}")
+                    else:
+                        frame_path = get_image_path(f"tmp/{self.current_sequence['id']}-{i}.jpg")
+                        with open(frame_path, "wb") as f:
+                            f.write(frame_response.content)
+                        print(f"Saved frame {i} for {self.current_sequence['id']} to {frame_path}")
+                        self.current_sequence['local_frames'][i] = frame_path
+                    self.downloaded_count += 1
+                    break
                 else:
-                    frame_path = get_image_path(f"tmp/{self.current_sequence['id']}-{i}.jpg")
-                    with open(frame_path, "wb") as f:
-                        f.write(frame_response.content)
-                    print(f"Saved frame {i} for {self.current_sequence['id']} to {frame_path}")
-                    self.current_sequence['local_frames'][i] = frame_path
-                self.downloaded_count += 1
-                break
-            else:
-                print(f"Failed to download frame {i} for {self.current_sequence['id']}")
+                    print(f"Failed to download frame {i} for {self.current_sequence['id']}")
+            except Exception as e:
+                print(f"Error downloading frame {i} for {self.current_sequence['id']}: {e}")
             await asyncio.sleep(0.1)
         
         self.downloading = False
@@ -642,7 +658,10 @@ class AnimationPlayer(Utility):
 
     def cleanup(self):
         if self.current_sequence:
-            if not USE_IMAGE_FALLBACK:
+            if USE_IMAGE_FALLBACK:
+                # delete self.current_sequence['local_frames'] as it contains the image data
+                self.current_sequence['local_frames'] = None
+            else:
                 for frame_path in self.current_sequence['local_frames']:
                     if frame_path is not None:
                         os.remove(frame_path)

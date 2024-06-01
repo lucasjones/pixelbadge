@@ -39,7 +39,7 @@ from .lj_utils.file_utils import file_exists, folder_exists
 from .lj_utils.color import hsv_to_rgb
 
 from .animation_viewer import AnimationApp, api_base_url, APP_BASE_PATH, PLAYING_ANIMATION_STATE
-from .basic_utils import Torch, Rainbow, Strobe, Spiral, CreditsScreen, UserUploadedDisclaimerScreen
+from .basic_utils import Torch, Rainbow, Strobe, Spiral, CreditsScreen, UserUploadedDisclaimerScreen, WaitingForWifiScreen
 from .game_of_life import ConwaysGameOfLife
 from .visual_effects import RandomGrid
 from .snap_game import SnapGame
@@ -131,6 +131,8 @@ class UtilityMenuApp(ImprovedAppBase):
         ])
         self.utilities["credits"] = CreditsScreen(self)
         self.utilities["pixel_art_disclaimer"] = UserUploadedDisclaimerScreen(self, APP_BASE_PATH)
+        self.waiting_wifi = WaitingForWifiScreen(self)
+        self.utilities["waiting_wifi"] = self.waiting_wifi
         self.button_labels = ButtonLabels(
             self, labels={
                 "LEFT": "Left",
@@ -159,9 +161,12 @@ class UtilityMenuApp(ImprovedAppBase):
     
     def set_screen(self, screen):
         self.utilities[self.current_menu].on_exit()
-        if screen == "Pixel Art":
+        if screen == self.animation_app_state:
             if not self.user_has_seen_disclaimer():
                 screen = "pixel_art_disclaimer"
+            elif not self.wifi_manager.is_connected():
+                screen = "waiting_wifi"
+                self.waiting_wifi.next_screen = self.animation_app_state
         self.current_menu = screen
         if screen != "main":
             self.button_labels.hide()
