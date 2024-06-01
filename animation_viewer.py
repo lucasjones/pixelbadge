@@ -64,7 +64,7 @@ async def download_thumbnails(thumbnail_browser, i, sequence, sequences_len, pag
             thumb_url = f"{api_base_url}/api/sequence/{sequence['id']}/thumbnail"
             if USE_IMAGE_FALLBACK:
                 thumb_url += "?fallback=true"
-            thumb_response = requests.get(thumb_url)
+            thumb_response = requests.get(thumb_url, headers=thumbnail_browser.parent.get_auth_headers())
             # thumbnail_browser.download_task = async_helpers.unblock(requests.get, thumbnail_browser.periodic_func, thumb_url)
             # thumb_response = await thumbnail_browser.download_task
             if thumbnail_browser.page_identifier() != page_identifier:
@@ -646,7 +646,7 @@ class AnimationPlayer(Utility):
                 self.downloading = False
                 return
             try:
-                frame_response = requests.get(frame_url)
+                frame_response = requests.get(frame_url, headers=self.parent.get_auth_headers())
                 if not self.downloading or self.current_sequence is None or 'local_frames' not in self.current_sequence or self.current_sequence['local_frames'] is None:
                     self.downloading = False
                     return
