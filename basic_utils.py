@@ -199,6 +199,7 @@ class CreditsScreen(Utility):
     def update_leds(self):
         for i in range(12):
             color = hsv_to_rgb(((self.screen_hue + i * 30) % 360 / 360) * math.tau, 1, 1)
+            color = (int(color[0] * 255), int(color[1] * 255), int(color[2] * 255))
             tildagonos.leds[i+1] = color
         tildagonos.leds.write()
 
