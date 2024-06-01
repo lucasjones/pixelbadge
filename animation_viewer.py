@@ -25,6 +25,8 @@ from .lj_utils.file_utils import file_exists, folder_exists
 APP_BASE_PATH = "/apps/pixelbadge/"
 DATA_BASE_PATH = "/data/pixelbadge/"
 USE_IMAGE_FALLBACK = True
+FASTLOAD_FRAMES = True
+
 # for f in os.listdir("/apps"):
 #     if app.startswith("lucasjones-pixelbadge"):
 #         APP_BASE_PATH = f"/apps/{app}/"
@@ -604,6 +606,8 @@ class AnimationPlayer(Utility):
         return True
 
     async def download_animation(self, sequence, frame):
+        if USE_IMAGE_FALLBACK and FASTLOAD_FRAMES and frame != 0:
+            return
         self.current_sequence = sequence
         self.downloading = True
         sequence_id = sequence.get("id")
@@ -630,6 +634,8 @@ class AnimationPlayer(Utility):
         frame_url = f"{api_base_url}/images/{self.current_sequence['id']}/{frame_id}"
         if USE_IMAGE_FALLBACK:
             frame_url += "?fallback=true"
+            if FASTLOAD_FRAMES:
+                frame_url += "&fastload=true"
         
         max_retries = 30
         retries = 0
@@ -656,22 +662,32 @@ class AnimationPlayer(Utility):
                 if frame_response.status_code == 200:
                     print(f"Downloaded frame {i} for {self.current_sequence['id']}")
                     if USE_IMAGE_FALLBACK:
-                        try:
-                            # frame_data = frame_response.json()
-                            # if 'colors' in frame_data:
-                            #     self.current_sequence['local_frames'][i] = frame_data
-                            # else:
-                            #     print(f"Failed to download frame {i} for {self.current_sequence['id']}: no colors in response")
-                            self.current_sequence['local_frames'][i] = frame_response.content
-                        except Exception as e:
-                            print(f"Error parsing fallback frame response: {e}")
+                        if not FASTLOAD_FRAMES:
+                            try:
+                                self.current_sequence['local_frames'][i] = frame_response.content
+                            except Exception as e:
+                                print(f"Error parsing fallback frame response: {e}")
+                        else:
+                            # all frames will be returned in a single response. We need to split the data based on the width and height of each frame
+                            full_data = frame_response.content
+                            width = full_data[0]
+                            height = full_data[1]
+                            frame_length = 2 + width * height * 3
+                            if len(full_data) != frame_length * len(self.current_sequence['local_frames']):
+                                print(f"Error: frame data length mismatch: {len(full_data)} != {frame_length * len(self.current_sequence['local_frames'])} width: {width} height: {height} num frames: {len(self.current_sequence['local_frames'])}")
+                            loaded_frame_count = min(len(full_data) // frame_length, len(self.current_sequence['local_frames']))
+                            for j in range(loaded_frame_count):
+                                frame_data = full_data[j * frame_length:(j + 1) * frame_length]
+                                self.current_sequence['local_frames'][j] = frame_data
+                            self.downloaded_count = loaded_frame_count
                     else:
                         frame_path = get_image_path(f"tmp/{self.current_sequence['id']}-{i}.jpg")
                         with open(frame_path, "wb") as f:
                             f.write(frame_response.content)
                         print(f"Saved frame {i} for {self.current_sequence['id']} to {frame_path}")
                         self.current_sequence['local_frames'][i] = frame_path
-                    self.downloaded_count += 1
+                    if not FASTLOAD_FRAMES:
+                        self.downloaded_count += 1
                     break
                 else:
                     print(f"Failed to download frame {i} for {self.current_sequence['id']}")
