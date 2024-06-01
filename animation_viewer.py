@@ -606,6 +606,7 @@ class AnimationPlayer(Utility):
     async def download_animation(self, sequence, frame):
         self.current_sequence = sequence
         self.downloading = True
+        sequence_id = sequence.get("id")
         if frame == 0:
             self.downloaded_count = 0
             self.total_to_download = len(self.current_sequence['frames'])
@@ -616,6 +617,9 @@ class AnimationPlayer(Utility):
                 self.frame_time = self.parent.default_frame_time
             self.current_sequence['local_frames'] = [None] * len(self.current_sequence['frames'])
         await asyncio.sleep(0.2)
+        if self.current_sequence is None or self.current_sequence.get("id") != sequence_id:
+            self.downloading = False
+            return
         # for i, frame_id in enumerate(self.current_sequence['frames']):
         i = frame
         frame_id = self.current_sequence['frames'][frame]
@@ -638,9 +642,15 @@ class AnimationPlayer(Utility):
             while not self.app.wifi_manager.is_connected():
                 print("[download_animation] Waiting for Wi-Fi connection...")
                 await asyncio.sleep(0.2)
+            if self.current_sequence is None or self.current_sequence.get("id") != sequence_id:
+                self.downloading = False
+                return
             try:
                 frame_response = requests.get(frame_url)
-                if not self.downloading or self.current_sequence is None:
+                if not self.downloading or self.current_sequence is None or 'local_frames' not in self.current_sequence or self.current_sequence['local_frames'] is None:
+                    self.downloading = False
+                    return
+                if self.current_sequence is None or self.current_sequence.get("id") != sequence_id:
                     self.downloading = False
                     return
                 if frame_response.status_code == 200:
@@ -678,7 +688,10 @@ class AnimationPlayer(Utility):
         if self.current_sequence:
             if USE_IMAGE_FALLBACK:
                 # delete self.current_sequence['local_frames'] as it contains the image data
-                self.current_sequence['local_frames'] = None
+                # set each element to None
+                if self.current_sequence is not None and 'local_frames' in self.current_sequence and self.current_sequence['local_frames'] is not None:
+                    for i in range(len(self.current_sequence['local_frames'])):
+                        self.current_sequence['local_frames'][i] = None
             else:
                 for frame_path in self.current_sequence['local_frames']:
                     if frame_path is not None:
