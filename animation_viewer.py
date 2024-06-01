@@ -516,6 +516,12 @@ class AnimationPlayer(Utility):
         ctx.save()
         ctx.image_smoothing = 0
         frame_drawn = False
+        # if self.current_sequence and self.leds_enabled:
+        #     try:
+        #         self.update_f_leds()
+        #     except Exception as e:
+        #         print(f"Error updating frame leds: {e}")
+        
         if self.current_sequence and 'local_frames' in self.current_sequence:
             current_frame, frame_path = self.get_current_frame_or_last_downloaded()
             if frame_path is not None:
@@ -556,12 +562,6 @@ class AnimationPlayer(Utility):
             else:
                 ctx.text("Waiting for WiFi...")
         ctx.restore()
-        
-        if self.current_sequence and self.leds_enabled:
-            try:
-                self.update_f_leds()
-            except Exception as e:
-                print(f"Error updating frame leds: {e}")
 
         # Start downloading next frame if we're not already downloading
         if self.current_sequence and 'local_frames' in self.current_sequence and not self.downloading and self.downloaded_count < self.total_to_download:
@@ -577,11 +577,11 @@ class AnimationPlayer(Utility):
             if self.frame_timer >= self.frame_time:
                 self.current_frame = (self.current_frame + 1) % len(self.current_sequence['frames'])
                 self.frame_timer = 0
-            # if self.leds_enabled:
-            #     try:
-            #         self.update_f_leds()
-            #     except Exception as e:
-            #         print(f"Error updating frame leds: {e}")
+            if self.leds_enabled:
+                try:
+                    self.update_f_leds()
+                except Exception as e:
+                    print(f"Error updating frame leds: {e}")
     
     def get_current_frame_or_last_downloaded(self):
         if self.current_sequence and 'local_frames' in self.current_sequence:
