@@ -134,7 +134,7 @@ class ThumbnailBrowser(Utility):
         self.icon_size = 60
         self.current_page_index = 1
         self.max_page_index = 1
-        self.sort_mode_index = 1
+        self.sort_mode_index = 0
         self.is_loading_sequences_list = False
         self.any_sequences_loaded = False
         self.fetch_sequences_error = False
@@ -163,9 +163,9 @@ class ThumbnailBrowser(Utility):
 
     def get_all_sort_modes(self):
         if self.parent.logged_in():
-            return ["recent", "popular", "recently_liked", "random", "favorites"]
+            return ["popular", "favorites", "random", "new"]
         else:
-            return ["recent", "popular", "recently_liked", "random"]
+            return ["popular", "random", "new"]
 
     def sort_mode(self):
         all_sort_modes = self.get_all_sort_modes()
@@ -231,6 +231,9 @@ class ThumbnailBrowser(Utility):
                         # _thread.start_new_thread(self.download_thumbnails, (0, self.page_identifier))
                         # self.download_thumbnails(0, self.page_identifier)
                         asyncio.create_task(self.run_download_thumbnails(0, self.page_identifier()))
+                    if 'random_uuid' in result and result['random_uuid'] != "" and (self.parent.badge_uuid is None or self.parent.badge_uuid == ""):
+                        self.parent.badge_uuid = result['random_uuid']
+                        self.parent.save_auth_info(badge_uuid=self.parent.badge_uuid)
                     break
                 else:
                     self.is_loading_sequences_list = False
@@ -553,6 +556,12 @@ class AnimationPlayer(Utility):
             else:
                 ctx.text("Waiting for WiFi...")
         ctx.restore()
+        
+        if self.current_sequence and self.leds_enabled:
+            try:
+                self.update_f_leds()
+            except Exception as e:
+                print(f"Error updating frame leds: {e}")
 
         # Start downloading next frame if we're not already downloading
         if self.current_sequence and 'local_frames' in self.current_sequence and not self.downloading and self.downloaded_count < self.total_to_download:
@@ -568,11 +577,11 @@ class AnimationPlayer(Utility):
             if self.frame_timer >= self.frame_time:
                 self.current_frame = (self.current_frame + 1) % len(self.current_sequence['frames'])
                 self.frame_timer = 0
-            if self.leds_enabled:
-                try:
-                    self.update_f_leds()
-                except Exception as e:
-                    print(f"Error updating frame leds: {e}")
+            # if self.leds_enabled:
+            #     try:
+            #         self.update_f_leds()
+            #     except Exception as e:
+            #         print(f"Error updating frame leds: {e}")
     
     def get_current_frame_or_last_downloaded(self):
         if self.current_sequence and 'local_frames' in self.current_sequence:
