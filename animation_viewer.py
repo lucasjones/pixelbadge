@@ -733,43 +733,57 @@ class AnimationMetadataViewer(Utility):
         ctx.move_to(0, 5).text(f"{self.sequence.get('title')}")
         heart_x, heart_y = 0, 60
         ctx.move_to(heart_x, heart_y)
-        if self.is_favorited:
-            ctx.rgb(1, 0, 0).text("favorited")
+        # check if user logged in
+        if self.parent.logged_in():
+            if self.is_favorited:
+                ctx.rgb(1, 0, 0).text("favorited")
+            else:
+                ctx.rgb(0, 0, 0).text("mark as favorite")
         else:
-            ctx.rgb(0, 0, 0).text("mark as favorite")
+            ctx.rgb(0, 0, 0).text("login to save favorites")
         ctx.restore()
 
     def handle_buttondown(self, event: ButtonDownEvent):
         if BUTTON_TYPES['CANCEL'] in event.button:
             self.parent.set_state(PLAYING_ANIMATION_STATE)
         elif BUTTON_TYPES['CONFIRM'] in event.button:
-            # _thread.start_new_thread(self.favorite_animation, ())
-            asyncio.create_task(self.favorite_animation())
+            if self.parent.logged_in():
+                # _thread.start_new_thread(self.favorite_animation, ())
+                asyncio.create_task(self.favorite_animation())
         return True
 
     async def favorite_animation(self):
         current_sequence_id = self.sequence['id']
         self.is_favorited = not self.is_favorited
-        print(f"Setting favorite state for {current_sequence_id} to {self.is_favorited}")
-        if not self.is_favorited:
-            self.save_favorite(current_sequence_id, self.is_favorited)
-        try:
-            while not self.app.wifi_manager.is_connected():
-                print("[favorite_animation] Waiting for Wi-Fi connection...")
-                await asyncio.sleep(0.2)
-            if self.is_favorited:
-                response = requests.post(f"{api_base_url}/api/sequence/{current_sequence_id}/mark_favorite", headers=self.parent.get_auth_headers())
-            else:
-                response = requests.post(f"{api_base_url}/api/sequence/{current_sequence_id}/remove_favorite", headers=self.parent.get_auth_headers())
-            if response.status_code == 200:
-                print("Successfully updated animation favorite state")
-                self.sequence['favorited_by_current_user'] = self.is_favorited
-            else:
-                print(f"Failed to favorite animation, status code: {response.status_code}")
-                self.save_favorite(current_sequence_id, self.is_favorited)
-        except Exception as e:
-            print(f"Error favoriting animation: {e}")
-            self.save_favorite(current_sequence_id, self.is_favorited)
+        is_favorited = self.is_favorited
+        print(f"Setting favorite state for {current_sequence_id} to {is_favorited}")
+        if not is_favorited:
+            self.save_favorite(current_sequence_id, is_favorited)
+        max_retries = 15
+        retries = 0
+        while retries < max_retries:
+            if retries > 0:
+                print(f"Favorite animation retry {retries}/{max_retries}")
+                await asyncio.sleep(1)
+            retries += 1
+            try:
+                while not self.app.wifi_manager.is_connected():
+                    print("[favorite_animation] Waiting for Wi-Fi connection...")
+                    await asyncio.sleep(0.2)
+                if is_favorited:
+                    response = requests.post(f"{api_base_url}/api/sequence/{current_sequence_id}/mark_favorite", headers=self.parent.get_auth_headers())
+                else:
+                    response = requests.post(f"{api_base_url}/api/sequence/{current_sequence_id}/remove_favorite", headers=self.parent.get_auth_headers())
+                if response.status_code == 200:
+                    print("Successfully updated animation favorite state")
+                    self.sequence['favorited_by_current_user'] = is_favorited
+                    return
+                else:
+                    print(f"Failed to favorite animation, status code: {response.status_code}")
+                    self.save_favorite(current_sequence_id, is_favorited)
+            except Exception as e:
+                print(f"Error favoriting animation: {e}")
+                self.save_favorite(current_sequence_id, is_favorited)
 
     def save_favorite(self, sequence_id, is_favorited):
         try:
@@ -869,14 +883,14 @@ class LoginUtility(Utility):
         
     
     async def run_poll_for_auth(self):
-        while self.parent.auth_token is None:
-            if self.polling_task is None:
-                return
+        while not self.parent.logged_in():
             await asyncio.sleep(5)
             while not self.app.wifi_manager.is_connected():
                 print("[poll_for_auth] Waiting for Wi-Fi connection...")
                 await asyncio.sleep(0.2)
             if self.parent.state != LOGIN_STATE:
+                return
+            if self.polling_task is None:
                 return
             self.check_for_auth()
 
