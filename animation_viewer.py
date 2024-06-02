@@ -222,7 +222,7 @@ class ThumbnailBrowser(Utility):
                     self.any_sequences_loaded = True
                     self.fetch_sequences_error = False
                     self.parent.delete_all_files(get_image_path("thumbs"))
-                    if 'thumbnail_path' in self.sequences[0]:
+                    if len(self.sequences) > 0 and 'thumbnail_path' in self.sequences[0]:
                         # decode base64 for each thumbnail
                         for seq in self.sequences:
                             seq['thumbnail_path'] = binascii.a2b_base64(seq['thumbnail_path'])
