@@ -765,7 +765,8 @@ class AnimationMetadataViewer(Utility):
             else:
                 ctx.rgb(0, 0, 0).text("mark as favorite")
         else:
-            ctx.rgb(0, 0, 0).text("login to save favorites")
+            ctx.move_to(0, 40).rgb(0, 0, 0).text("login to save favorites")
+            ctx.move_to(0, 60).text("+ upload animations")
         ctx.restore()
 
     def handle_buttondown(self, event: ButtonDownEvent):

@@ -37,4 +37,4 @@ description = "Pixel art animations (+ upload your own at pixelbadge.xyz)"
 # increased, we interpret this as a new version being released.
 #
 # Version number must be an integer!
-version = "1.0.8"
+version = "1.0.9"
