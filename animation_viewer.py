@@ -147,7 +147,7 @@ def fallback_image_renderer(ctx, data, x, y, w, h, pixel_perfect=True, center_ov
             ctx.rectangle(x + i * rect_width, y + j * rect_height, rect_width_plus_one, rect_height_plus_one).fill()
             index += 3
     
-    print("Fallback image render time:", time.ticks_diff(time.ticks_ms(), start))
+    # print("Fallback image render time:", time.ticks_diff(time.ticks_ms(), start))
 
 class ThumbnailBrowser(Utility):
     def __init__(self, app, parent):
