@@ -31,7 +31,7 @@ class Notification:
         return f"<Notification '{self.message}' on port {self._port} ({self._open} - {self._open_time})>"
 
     def _is_closed(self):
-        return self._animation_state < 0.01
+        return self._animation_state < 0.01 and not self._open
 
     def open(self):
         self._animation_target = 1

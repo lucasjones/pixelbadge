@@ -104,13 +104,39 @@ async def download_thumbnails(thumbnail_browser, i, sequence, sequences_len, pag
     
     return None
 
-def fallback_image_renderer(ctx, data, x, y, w, h):
+def fallback_image_renderer(ctx, data, x, y, w, h, pixel_perfect=True, center_overflow=True, glitch_effect=False):
     width = data[0]
     height = data[1]
     rect_width = w / width
     rect_height = h / height
+    if pixel_perfect:
+        rect_width = math.ceil(rect_width)
+        rect_height = math.ceil(rect_height)
+        x = math.floor(x)
+        y = math.floor(y)
+    
     index = 2  # Start after width and height
+    if glitch_effect:
+        if glitch_effect < 0:
+            glitch_effect = 0
+        elif glitch_effect > 2:
+            glitch_effect = 2
+        index = index - glitch_effect
     pixel_mul = 1.0 / 255.0
+
+    rect_width_plus_one = rect_width + 1
+    rect_height_plus_one = rect_height + 1
+
+    if pixel_perfect and center_overflow:
+        # Calculate overflow and subtract half of it from x and y
+        overflow_x = (rect_width * width) - w
+        overflow_y = (rect_height * height) - h
+        if overflow_x > 0:
+            x -= math.floor(overflow_x * 0.5)
+        if overflow_y > 0:
+            y -= math.floor(overflow_y * 0.5)
+
+    start = time.ticks_ms()
 
     for j in range(height):
         for i in range(width):
@@ -118,8 +144,10 @@ def fallback_image_renderer(ctx, data, x, y, w, h):
             g = data[index + 1]
             b = data[index + 2]
             ctx.rgb(r * pixel_mul, g * pixel_mul, b * pixel_mul)
-            ctx.rectangle(x + i * rect_width, y + j * rect_height, rect_width + 1, rect_height + 1).fill()
+            ctx.rectangle(x + i * rect_width, y + j * rect_height, rect_width_plus_one, rect_height_plus_one).fill()
             index += 3
+    
+    print("Fallback image render time:", time.ticks_diff(time.ticks_ms(), start))
 
 class ThumbnailBrowser(Utility):
     def __init__(self, app, parent):
@@ -504,10 +532,11 @@ class AnimationPlayer(Utility):
         self.leds_enabled = True
         self.downloaded_count = 0
         self.total_to_download = 0
+        self.glitch_effect = 0
+        self.frame_time = self.parent.default_frame_time
         self.reset()
 
     def reset(self):
-        self.frame_time = self.parent.default_frame_time
         self.frame_timer = 0
         self.current_frame = 0
 
@@ -527,7 +556,7 @@ class AnimationPlayer(Utility):
             if frame_path is not None:
                 ctx.move_to(0, 0)
                 if USE_IMAGE_FALLBACK:
-                    fallback_image_renderer(ctx, frame_path, -display_x * 0.5, -display_y * 0.5, display_x, display_y)
+                    fallback_image_renderer(ctx, frame_path, -display_x * 0.5, -display_y * 0.5, display_x, display_y, glitch_effect=self.glitch_effect)
                 else:
                     ctx.image(frame_path, -display_x * 0.5, -display_y * 0.5, display_x, display_y)
                 frame_drawn = True
@@ -612,12 +641,15 @@ class AnimationPlayer(Utility):
         elif BUTTON_TYPES['CONFIRM'] in event.button:
             self.parent.metadata_viewer.set_sequence(self.current_sequence)
             self.parent.set_state(VIEW_METADATA_STATE)
+        elif BUTTON_TYPES['UP'] in event.button:
+            self.glitch_effect = (self.glitch_effect + 1) % 3
         return True
 
     async def download_animation(self, sequence, frame):
         if USE_IMAGE_FALLBACK and FASTLOAD_FRAMES and frame != 0:
             return
         self.current_sequence = sequence
+        self.glitch_effect = 0
         self.downloading = True
         sequence_id = sequence.get("id")
         if frame == 0:

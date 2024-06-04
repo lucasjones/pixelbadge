@@ -208,6 +208,11 @@ class UtilityMenuApp(ImprovedAppBase):
         if delta < 500:
             for notification in self.notifications:
                 notification.update(delta)
+                if notification._is_closed():
+                    print(f"Removing notification '{notification.message}' as it is closed.")
+                    self.notifications.remove(notification)
+        
+        self.wifi_manager.disabled = self.is_playing_animation()
         
         # Update the WiFiManager
         self.wifi_manager.update(delta)
@@ -261,12 +266,17 @@ class UtilityMenuApp(ImprovedAppBase):
         notification = Notification("Wi-Fi Disconnected", open=True, animate_duration=200, display_time=1000)
         self.notifications.append(notification)
     
-    def should_show_wifi_notification(self):
-        # don't show if an animation is playing and is fully downloaded
+    def is_playing_animation(self):
         if self.current_menu == self.animation_app_state:
             if self.animation_app.state == PLAYING_ANIMATION_STATE:
                 if not self.animation_app.animation_player.downloading:
-                    return False
+                    return True
+        return False
+    
+    def should_show_wifi_notification(self):
+        # don't show if an animation is playing and is fully downloaded
+        if self.is_playing_animation():
+            return False
         return True
 
     def user_has_seen_disclaimer(self):

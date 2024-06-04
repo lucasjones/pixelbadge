@@ -47,9 +47,12 @@ class WiFiManager:
         self.wifi_connected = False
         self.timer = 0.0
         self.done_first_update = False
+        self.disabled = False
 
     def update(self, delta):
         self.timer += delta / 1000.0
+        if self.disabled:
+            return
         # Run this check every second
         if self.timer - self._last_check < 1 and self.done_first_update:
             return
